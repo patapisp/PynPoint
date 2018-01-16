@@ -46,3 +46,18 @@ output/*/index.html
 
 # Sphinx
 docs/_build
+.cache/
+.idea/
+Paper_Notebooks/.ipynb_checkpoints/
+PynPoint/processing_modules/__pycache__/
+PynPoint/util/__pycache__/
+__pycache__/
+docs/_planning/PynPoint_0_2_0_open_tasks.txt
+docs/_planning/PynPoint_overview.mdj
+test/__pycache__/
+test/test_PSF_subtraction/test_data/PynPoint_config.ini
+test/test_core/test_data/init/PynPoint_config.ini
+test/test_core/test_data/modules/PynPoint_config.ini
+test/test_processing/PynPoint_config.ini
+test/test_processing/PynPoint_database.hdf5
+test/test_processing/test.fits
