@@ -71,8 +71,8 @@ class StackAndSubsetModule(ProcessingModule):
         if tmp_files is None:
             raise ValueError("No files are listed in Used_Files.")
 
-        if num_images is None:
-            raise ValueError("No images are present, NAXIS3 is empty.")
+        #if num_images is None:
+        #    raise ValueError("No images are present, NAXIS3 is empty.")
 
         if self.m_stacking not in (False, None):
             # Stack subsets of frames
