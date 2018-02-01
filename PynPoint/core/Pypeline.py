@@ -1,10 +1,13 @@
 """
 Module which capsules different pipeline processing steps.
 """
-import collections
+
 import os
+import sys
 import warnings
 import configparser
+import collections
+import multiprocessing
 
 import h5py
 import numpy as np
@@ -43,8 +46,12 @@ class Pypeline(object):
                                 WritingModules added to the Pypeline. It is possible to specify
                                 a different locations for each WritingModule using their
                                 constructors.
+
         :return: None
         """
+
+        sys.stdout.write("Initiating PynPoint...")
+        sys.stdout.flush()
 
         self._m_working_place = working_place_in
         self._m_input_place = input_place_in
@@ -54,6 +61,9 @@ class Pypeline(object):
 
         self._config_init()
 
+        sys.stdout.write(" [DONE]\n")
+        sys.stdout.flush()
+
     def __setattr__(self, key, value):
         """
         This method is called every time a member / attribute of the Pypeline is changed.
@@ -61,6 +71,7 @@ class Pypeline(object):
 
         :param key: member / attribute name
         :param value: new value for the given attribute / member
+
         :return: None
         """
 
@@ -76,11 +87,12 @@ class Pypeline(object):
     def _validate(module,
                   existing_data_tags):
         """
-        Internal function which is used for the validation of the pipeline.
-        It validates a single module.
+        Internal function which is used for the validation of the pipeline. Validates a
+        single module.
 
         :param module: The module
         :param existing_data_tags: Tags which exist in the database
+
         :return: validation
         :rtype: bool, str
         """
@@ -113,6 +125,8 @@ class Pypeline(object):
         :return: None
         """
 
+        max_cpu_count = multiprocessing.cpu_count()
+
         config_dict = {'INSTRUMENT': 'INSTRUME',
                        'NFRAMES': 'NAXIS3',
                        'EXP_NO': 'ESO DET EXP NO',
@@ -120,7 +134,8 @@ class Pypeline(object):
                        'PARANG_START': 'ESO ADA POSANG',
                        'PARANG_END': 'ESO ADA POSANG END',
                        'PIXSCALE': 0.027,
-                       'MEMORY': 100}
+                       'MEMORY': 1000,
+                       'CPU_COUNT': max_cpu_count}
 
         config_file = self._m_working_place+"/PynPoint_config.ini"
 
@@ -152,22 +167,26 @@ class Pypeline(object):
             if config.has_option('settings', 'MEMORY'):
                 config_dict['MEMORY'] = int(config.get('settings', 'MEMORY'))
 
+            if config.has_option('settings', 'CPU_COUNT'):
+                config_dict['CPU_COUNT'] = int(config.get('settings', 'CPU_COUNT'))
+
         else:
             warnings.warn("Configuration file not found so creating PynPoint_config.ini with "
                           "default values.")
 
-            f = open(config_file, 'w')
-            f.write('[header]\n\n')
-            f.write('INSTRUMENT: INSTRUME\n')
-            f.write('NFRAMES: NAXIS3\n')
-            f.write('EXP_NO: ESO DET EXP NO\n')
-            f.write('NDIT: ESO DET NDIT\n')
-            f.write('PARANG_START: ESO ADA POSANG\n')
-            f.write('PARANG_END: ESO ADA POSANG END\n\n')
-            f.write('[settings]\n\n')
-            f.write('PIXSCALE: 0.027\n')
-            f.write('MEMORY: 100\n')
-            f.close()
+            file_obj = open(config_file, 'w')
+            file_obj.write('[header]\n\n')
+            file_obj.write('INSTRUMENT: INSTRUME\n')
+            file_obj.write('NFRAMES: NAXIS3\n')
+            file_obj.write('EXP_NO: ESO DET EXP NO\n')
+            file_obj.write('NDIT: ESO DET NDIT\n')
+            file_obj.write('PARANG_START: ESO ADA POSANG\n')
+            file_obj.write('PARANG_END: ESO ADA POSANG END\n\n')
+            file_obj.write('[settings]\n\n')
+            file_obj.write('PIXSCALE: 0.027\n')
+            file_obj.write('MEMORY: 1000\n')
+            file_obj.write('CPU_COUNT: 1')
+            file_obj.close()
 
         hdf = h5py.File(self._m_working_place+'/PynPoint_database.hdf5', 'a')
         if "config" in hdf:
@@ -213,19 +232,24 @@ class Pypeline(object):
     def remove_module(self,
                       name):
         """
-        Removes a Pypeline module from the internal dictionary. Returns
+        Removes a Pypeline module from the internal dictionary.
 
         :param name: The name (key) of the module which has to be removed.
         :type name: str
-        :return: True if module was deleted False if module does not exist
+
+        :return: True if module was deleted and False if module does not exist.
         :rtype: bool
         """
 
         if name in self._m_modules:
             del self._m_modules[name]
-            return True
+            removed = True
+
         else:
-            return False
+            warnings.warn("Module name '"+name+"' not found in the Pypeline dictionary.")
+            removed = False
+
+        return removed
 
     def get_module_names(self):
         """
@@ -264,8 +288,9 @@ class Pypeline(object):
 
         :param name: name of the module to be checked
         :type name: str
-        :return: True if pipeline is valid False of not. The second parameter gives the name of the
-                 module which is not valid.
+
+        :return: True if pipeline is valid and False if not valid. The second parameter gives the
+                 name of the module which is not valid.
         :rtype: bool, str
         """
 
@@ -277,31 +302,30 @@ class Pypeline(object):
         else:
             return
 
-        return self._validate(module,
-                              existing_data_tags)
+        return self._validate(module, existing_data_tags)
 
     def run(self):
         """
         Walks through all saved processing steps and calls their run methods. The order the steps
         are called depends on the order they have been added to the Pypeline.
-        **NOTE:** This method prints information about the current process.
 
         :return: None
         """
 
-        print "Validating Pypeline..."
+        sys.stdout.write("Validating Pypeline...")
+        sys.stdout.flush()
+
         validation = self.validate_pipeline()
         if not validation[0]:
             raise AttributeError('Pipeline module %s is looking for data under a tag which is not '
                                  'created by a previous module or does not exist in the database.'
                                  % validation[1])
 
-        print "Start running Pypeline..."
+        sys.stdout.write(" [DONE]\n")
+        sys.stdout.flush()
+
         for key in self._m_modules:
-            print "Start running " + key + "..."
             self._m_modules[key].run()
-            print "Finished running " + key
-        print "Finished running Pypeline."
 
     def run_module(self, name):
         """
@@ -309,49 +333,58 @@ class Pypeline(object):
 
         :param name: Name of the module.
         :type name: str
+
         :return: None
         """
 
         if name in self._m_modules:
+            sys.stdout.write("Validating module "+name+"...")
+            sys.stdout.flush()
 
-            print "Validating module..."
             validation = self.validate_pipeline_module(name)
-            if not validation[0]:
-                raise AttributeError(
-                    'Pipeline module %s is looking for data under a tag which does not'
-                    ' exist in the database.'
-                    % validation[1])
 
-            print "Start running module..."
+            if not validation[0]:
+                raise AttributeError('Pipeline module %s is looking for data under a tag which '
+                                     'does not exist in the database.' % validation[1])
+
+            sys.stdout.write(" [DONE]\n")
+            sys.stdout.flush()
+
             self._m_modules[name].run()
-            print "Finished running module..."
+
         else:
-            warnings.warn('Module not found')
+            warnings.warn("Module '"+name+"' not found.")
 
     def get_data(self,
                  tag):
         """
-        Small function for easy data base access.
+        Function for easy access of the database.
 
-        :param tag: Dataset tag
+        :param tag: Dataset tag.
         :type tag: str
-        :return: The dataset
-        :rtype: numpy array
+
+        :return: The selected dataset from the database.
+        :rtype: numpy.asarray
         """
+
         self.m_data_storage.open_connection()
+
         return np.asarray(self.m_data_storage.m_data_bank[tag])
 
     def get_attribute(self,
                       data_tag,
                       attr_name):
         """
-        Small function for easy attributes data access. Supports only static attributes.
+        Function for easy attributes data access. Supports only static attributes.
 
-        :param data_tag: Dataset tag
+        :param data_tag: Dataset tag.
         :type data_tag: str
-        :param attr_name: Name of the attribute
+        :param attr_name: Name of the attribute from the database.
         :type attr_name: str
-        :return: The attribute
+
+        :return: The attribute value(s).
         """
+
         self.m_data_storage.open_connection()
+
         return self.m_data_storage.m_data_bank[data_tag].attrs[attr_name]

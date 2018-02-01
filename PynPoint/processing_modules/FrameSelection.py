@@ -2,9 +2,13 @@
 Modules with tools for frame selection.
 """
 
-from PynPoint.core import ProcessingModule
+import sys
 
 import numpy as np
+
+from PynPoint.core import ProcessingModule
+from PynPoint.util.Progress import progress
+
 
 class RemoveFramesModule(ProcessingModule):
     """
@@ -65,6 +69,7 @@ class RemoveFramesModule(ProcessingModule):
         # Reading subsets of num_image_in_memory frames and remove frame_indices
 
         for i in range(num_subsets):
+            progress(i, num_subsets, "Running RemoveFramesModule...")
 
             tmp_im = self.m_image_in_port[i*self.m_image_memory:(i+1)*self.m_image_memory, :, :]
 
@@ -80,6 +85,9 @@ class RemoveFramesModule(ProcessingModule):
                 self.m_image_out_port.set_all(tmp_im, keep_attributes=True)
             else:
                 self.m_image_out_port.append(tmp_im)
+
+        sys.stdout.write("Running RemoveFramesModule... [DONE]\n")
+        sys.stdout.flush()
 
         # Adding the leftover frames that do not fit in an integer amount of num_image_in_memory
 
@@ -122,5 +130,16 @@ class RemoveFramesModule(ProcessingModule):
 
         self.m_image_out_port.add_history_information("Removed frames",
                                                       str(np.size(self.m_frame_indices)))
+
+        # Update star position (if present)
+
+        if "STAR_POSITION" in self.m_image_in_port.get_all_non_static_attributes():
+
+            starpos_in = self.m_image_in_port.get_attribute("STAR_POSITION")
+            starpos_out = np.delete(starpos_in,
+                                    self.m_frame_indices,
+                                    axis=0)
+
+            self.m_image_out_port.add_attribute("STAR_POSITION", starpos_out, static=False)
 
         self.m_image_out_port.close_port()

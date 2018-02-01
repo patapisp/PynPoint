@@ -8,7 +8,7 @@ import numpy as np
 
 from PynPoint import Pypeline
 from PynPoint.core.DataIO import DataStorage
-from PynPoint.io_modules import ReadFitsCubesDirectory, WriteAsSingleFitsFile
+from PynPoint.io_modules import FitsReadingModule, FitsWritingModule
 from PynPoint.processing_modules import BadPixelCleaningSigmaFilterModule, \
      DarkSubtractionModule, FlatSubtractionModule, CutTopLinesModule, \
      AngleCalculationModule, MeanBackgroundSubtractionModule, \
@@ -24,20 +24,20 @@ class TestDocumentation(object):
 
     def test_docs(self):
 
-        reading_data = ReadFitsCubesDirectory(name_in="Fits_reading",
-                                              image_tag="im_arr")
+        reading_data = FitsReadingModule(name_in="Fits_reading",
+                                         image_tag="im_arr")
 
         self.pipeline.add_module(reading_data)
 
-        reading_dark = ReadFitsCubesDirectory(name_in="Dark_reading",
-                                              input_dir=self.test_dir+"/test_data/dark",
-                                              image_tag="dark_arr")
+        reading_dark = FitsReadingModule(name_in="Dark_reading",
+                                         input_dir=self.test_dir+"/test_data/dark",
+                                         image_tag="dark_arr")
 
         self.pipeline.add_module(reading_dark)
 
-        reading_flat = ReadFitsCubesDirectory(name_in="Flat_reading",
-                                              input_dir=self.test_dir+"/test_data/flat",
-                                              image_tag="flat_arr")
+        reading_flat = FitsReadingModule(name_in="Flat_reading",
+                                         input_dir=self.test_dir+"/test_data/flat",
+                                         image_tag="flat_arr")
 
         self.pipeline.add_module(reading_flat)
 
@@ -127,9 +127,9 @@ class TestDocumentation(object):
 
         self.pipeline.add_module(psf_sub)
 
-        writing = WriteAsSingleFitsFile(name_in="Fits_writing",
-                                        file_name="test.fits",
-                                        data_tag="res_mean")
+        writing = FitsWritingModule(name_in="Fits_writing",
+                                    file_name="test.fits",
+                                    data_tag="res_mean")
 
         self.pipeline.add_module(writing)
 
@@ -169,14 +169,14 @@ class TestDocumentation(object):
         assert data[0, 31, 20] == -3.9392607130869333e-05
 
         data = storage.m_data_bank["im_arr_aligned"]
-        assert data[0, 61, 39] == 0.00021600121168847015
+        assert data[0, 61, 39] == 0.00021600121168846993
 
         data = storage.m_data_bank["im_arr_stacked"]
-        assert data[0, 61, 39] == 8.2429659114370023e-05
+        assert data[0, 61, 39] == 8.2430113567504408e-05
 
         data = storage.m_data_bank["res_mean"]
-        assert data[61, 39] == -4.4710338563281608e-05
-        assert np.mean(data) == 5.196570975891392e-08
+        assert data[61, 39] == -4.3970096986442451e-05
+        assert np.mean(data) == 6.4361558939463885e-08
         assert data.shape == (72, 72)
 
         storage.close_connection()

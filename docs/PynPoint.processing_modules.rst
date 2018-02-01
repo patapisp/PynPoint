@@ -28,6 +28,22 @@ PynPoint\.processing\_modules\.DarkAndFlatSubtraction module
     :undoc-members:
     :show-inheritance:
 
+PynPoint\.processing\_modules\.DetectionLimits module
+-----------------------------------------------------
+
+.. automodule:: PynPoint.processing_modules.DetectionLimits
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+PynPoint\.processing\_modules\.FluxAndPosition module
+-----------------------------------------------------
+
+.. automodule:: PynPoint.processing_modules.FluxAndPosition
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 PynPoint\.processing\_modules\.FrameSelection module
 ----------------------------------------------------
 
@@ -44,10 +60,10 @@ PynPoint\.processing\_modules\.NACOPreparation module
     :undoc-members:
     :show-inheritance:
 
-PynPoint\.processing\_modules\.PSFSubtraction module
-----------------------------------------------------
+PynPoint\.processing\_modules\.PSFSubtractionPCA module
+-------------------------------------------------------
 
-.. automodule:: PynPoint.processing_modules.PSFSubtraction
+.. automodule:: PynPoint.processing_modules.PSFSubtractionPCA
     :members:
     :undoc-members:
     :show-inheritance:
@@ -64,14 +80,6 @@ PynPoint\.processing\_modules\.SimpleTools module
 -------------------------------------------------
 
 .. automodule:: PynPoint.processing_modules.SimpleTools
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-PynPoint\.processing\_modules\.SkyScienceDataModules module
------------------------------------------------------------
-
-.. automodule:: PynPoint.processing_modules.SkyScienceDataModules
     :members:
     :undoc-members:
     :show-inheritance:
