@@ -528,6 +528,8 @@ class FastPCAModule(ProcessingModule):
 
         cpu_count = self._m_config_port.get_attribute("CPU_COUNT")
 
+        print cpu_count
+
         rotations = - self.m_star_in_port.get_attribute("NEW_PARA")
         rotations += np.ones(rotations.shape[0]) * self.m_extra_rot
 
