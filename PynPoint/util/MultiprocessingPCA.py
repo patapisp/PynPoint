@@ -104,7 +104,7 @@ class PcaTaskProcessor(TaskProcessor):
 
         # inverse rotation
         res_array = np.zeros(shape=tmp_without_psf.shape)
-        for i in range(0, len(self.m_angles)):
+        for i in range(0, len(self.m_angles)-1):
             res_temp = tmp_without_psf[i, ]
             res_array[i, ] = ndimage.rotate(res_temp,
                                             self.m_angles[i],
