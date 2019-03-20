@@ -51,6 +51,8 @@ from pynpoint.processing.psfpreparation import PSFpreparationModule, \
 
 from pynpoint.processing.psfsubtraction import PcaPsfSubtractionModule
 
+from pynpoint.processing.iterativepsfsubtraction import IterativePcaPsfSubtractionModule
+
 from pynpoint.processing.resizing import CropImagesModule, \
                                          ScaleImagesModule, \
                                          AddLinesModule, \
