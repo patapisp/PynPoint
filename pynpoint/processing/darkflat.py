@@ -1,5 +1,5 @@
 """
-Modules for dark frame and flat field calibrations.
+Pipeline modules for dark frame and flat field calibrations.
 """
 
 from __future__ import absolute_import
@@ -17,13 +17,17 @@ def _master_frame(data,
     Internal function which creates a master dark/flat by calculating the mean (3D data) and
     cropping the frames to the shape of the science images if needed.
 
-    :param data: Input array (2D or 3D) with dark or flat frames.
-    :type data: numpy.ndarray
-    :param image_in_port: Input port with the science images.
-    :type image_in_port: numpy.ndarray
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Input array (2D or 3D) with dark or flat frames.
+    image_in_port : numpy.ndarray
+        Input port with the science images.
 
-    :return: Master dark/flat frame.
-    :rtype: numpy.ndarray
+    Returns
+    -------
+    numpy.ndarray
+        Master dark/flat frame.
     """
 
     if data.ndim == 3:
@@ -53,7 +57,7 @@ def _master_frame(data,
 
 class DarkCalibrationModule(ProcessingModule):
     """
-    Module to subtract a master dark from the science data.
+    Pipeline module to subtract a master dark from the science data.
     """
 
     def __init__(self,
@@ -64,17 +68,21 @@ class DarkCalibrationModule(ProcessingModule):
         """
         Constructor of DarkCalibrationModule.
 
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry with the science images that are read as
-                             input.
-        :type image_in_tag: str
-        :param dark_in_tag: Tag of the database with the dark frames that are read as input.
-        :type dark_in_tag: str
-        :param image_out_tag: Tag of the database entry that is written as output.
-        :type image_out_tag: str
+        Parameters
+        ----------
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry with the science images that are read as input.
+        dark_in_tag : str
+            Tag of the database with the dark frames that are read as input.
+        image_out_tag : str
+            Tag of the database entry that is written as output.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(DarkCalibrationModule, self).__init__(name_in=name_in)
@@ -88,7 +96,10 @@ class DarkCalibrationModule(ProcessingModule):
         Run method of the module. Creates a master dark with the same shape as the science
         data and subtracts the dark frame from the science data.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         def _dark_calibration(image_in, dark_in):
@@ -103,14 +114,15 @@ class DarkCalibrationModule(ProcessingModule):
                                       "Running DarkCalibrationModule...",
                                       func_args=(master, ))
 
-        self.m_image_out_port.add_history_information("Calibration", "dark")
-        self.m_image_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        history = "dark_in_tag = "+self.m_dark_in_port.tag
+        self.m_image_out_port.add_history("DarkCalibrationModule", history)
+        self.m_image_out_port.copy_attributes(self.m_image_in_port)
         self.m_image_out_port.close_port()
 
 
 class FlatCalibrationModule(ProcessingModule):
     """
-    Module to apply a flat field correction to the science data.
+    Pipeline module to apply a flat field correction to the science data.
     """
 
     def __init__(self,
@@ -121,16 +133,21 @@ class FlatCalibrationModule(ProcessingModule):
         """
         Constructor of FlatCalibrationModule.
 
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the science database that is read as input.
-        :type image_in_tag: str
-        :param dark_in_tag: Tag of the flat field database that is read as input.
-        :type dark_in_tag: str
-        :param image_out_tag: Tag of the database entry that is written as output.
-        :type image_out_tag: str
+        Parameters
+        ----------
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the science database that is read as input.
+        dark_in_tag : str
+            Tag of the flat field database that is read as input.
+        image_out_tag : str
+            Tag of the database entry that is written as output.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(FlatCalibrationModule, self).__init__(name_in=name_in)
@@ -144,7 +161,10 @@ class FlatCalibrationModule(ProcessingModule):
         Run method of the module. Creates a master flat with the same shape as the science
         image and divides the science images by the flat field.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         def _flat_calibration(image_in, flat_in):
@@ -170,6 +190,7 @@ class FlatCalibrationModule(ProcessingModule):
                                       "Running FlatCalibrationModule...",
                                       func_args=(master, ))
 
-        self.m_image_out_port.add_history_information("Calibration", "flat")
-        self.m_image_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        history = "flat_in_tag = "+self.m_flat_in_port.tag
+        self.m_image_out_port.add_history("FlatCalibrationModule", history)
+        self.m_image_out_port.copy_attributes(self.m_image_in_port)
         self.m_image_out_port.close_port()

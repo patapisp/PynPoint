@@ -17,8 +17,8 @@ from pynpoint.processing.basic import SubtractImagesModule, \
                                       AddImagesModule, \
                                       RotateImagesModule
 
-from pynpoint.processing.centering import StarAlignmentModule, \
-                                          StarExtractionModule, \
+from pynpoint.processing.centering import StarExtractionModule, \
+                                          StarAlignmentModule, \
                                           StarCenteringModule, \
                                           ShiftImagesModule, \
                                           WaffleCenteringModule
@@ -26,16 +26,17 @@ from pynpoint.processing.centering import StarAlignmentModule, \
 from pynpoint.processing.darkflat import DarkCalibrationModule, \
                                          FlatCalibrationModule
 
-from pynpoint.processing.frameselection import RemoveFramesModule, \
-                                               FrameSelectionModule, \
-                                               RemoveLastFrameModule, \
-                                               RemoveStartFramesModule
-
 from pynpoint.processing.fluxposition import FakePlanetModule, \
                                              SimplexMinimizationModule, \
                                              FalsePositiveModule, \
                                              MCMCsamplingModule, \
                                              AperturePhotometryModule
+
+from pynpoint.processing.frameselection import RemoveFramesModule, \
+                                               FrameSelectionModule, \
+                                               RemoveLastFrameModule, \
+                                               RemoveStartFramesModule, \
+                                               ImageStatisticsModule
 
 from pynpoint.processing.limits import ContrastCurveModule
 
@@ -49,7 +50,8 @@ from pynpoint.processing.psfpreparation import PSFpreparationModule, \
                                                SortParangModule, \
                                                SDIpreparationModule
 
-from pynpoint.processing.psfsubtraction import PcaPsfSubtractionModule
+from pynpoint.processing.psfsubtraction import PcaPsfSubtractionModule, \
+                                               ClassicalADIModule
 
 from pynpoint.processing.iterativepsfsubtraction import IterativePcaPsfSubtractionModule
 
@@ -60,6 +62,7 @@ from pynpoint.processing.resizing import CropImagesModule, \
 
 from pynpoint.processing.stacksubset import StackAndSubsetModule, \
                                             MeanCubeModule, \
+                                            StackCubesModule, \
                                             DerotateAndStackModule, \
                                             CombineTagsModule
 
@@ -80,13 +83,14 @@ from pynpoint.readwrite.textwriting import AttributeWritingModule, \
                                            ParangWritingModule, \
                                            TextWritingModule
 
-from pynpoint.readwrite.textreading import ParangReadingModule
+from pynpoint.readwrite.textreading import ParangReadingModule, \
+                                           AttributeReadingModule
 
 warnings.simplefilter('always', DeprecationWarning)
 
 __author__ = 'Tomas Stolker, Markus Bonse, Sascha Quanz, and Adam Amara'
 __license__ = 'GPLv3'
-__version__ = '0.6.2'
+__version__ = '0.7.0'
 __maintainer__ = 'Tomas Stolker'
 __email__ = 'tomas.stolker@phys.ethz.ch'
 __status__ = 'Development'

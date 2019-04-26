@@ -1,5 +1,5 @@
 """
-Modules with simple pre-processing tools.
+Pipeline modules for resizing of images.
 """
 
 from __future__ import absolute_import
@@ -15,7 +15,7 @@ from pynpoint.util.image import crop_image, scale_image
 
 class CropImagesModule(ProcessingModule):
     """
-    Module for cropping of images around a given position.
+    Pipeline module for cropping of images around a given position.
     """
 
     def __init__(self,
@@ -27,20 +27,25 @@ class CropImagesModule(ProcessingModule):
         """
         Constructor of CropImagesModule.
 
-        :param size: New image size (arcsec). The same size will be used for both image dimensions.
-        :type size: float
-        :param center: Tuple (x0, y0) with the new image center. Python indexing starts at 0. The
-                       center of the input images will be used when *center* is set to *None*.
-        :type center: (int, int)
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry that is read as input.
-        :type image_in_tag: str
-        :param image_out_tag: Tag of the database entry that is written as output. Should be
-                              different from *image_in_tag*.
-        :type image_out_tag: str
+        Parameters
+        ----------
+        size : float
+            New image size (arcsec). The same size will be used for both image dimensions.
+        center : tuple(int, int)
+            Tuple (x0, y0) with the new image center. Python indexing starts at 0. The center of
+            the input images will be used when *center* is set to *None*.
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry that is read as input.
+        image_out_tag : str
+            Tag of the database entry that is written as output. Should be different from
+            *image_in_tag*.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(CropImagesModule, self).__init__(name_in=name_in)
@@ -59,7 +64,10 @@ class CropImagesModule(ProcessingModule):
         Run method of the module. Decreases the image size by cropping around an given position.
         The module always returns odd-sized images.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         self.m_image_out_port.del_all_attributes()
@@ -81,14 +89,15 @@ class CropImagesModule(ProcessingModule):
                                       "Running CropImagesModule...",
                                       func_args=(self.m_size, self.m_center))
 
-        self.m_image_out_port.add_history_information("Image cropped", str(self.m_size))
-        self.m_image_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        history = "image size [pix] = "+str(self.m_size)
+        self.m_image_out_port.add_history("CropImagesModule", history)
+        self.m_image_out_port.copy_attributes(self.m_image_in_port)
         self.m_image_out_port.close_port()
 
 
 class ScaleImagesModule(ProcessingModule):
     """
-    Module for rescaling of an image.
+    Pipeline module for rescaling of an image.
     """
 
     def __init__(self,
@@ -100,22 +109,26 @@ class ScaleImagesModule(ProcessingModule):
         """
         Constructor of ScaleImagesModule.
 
-        :param scaling: Tuple with the scaling factors for the image size and flux,
-                        (scaling_x, scaling_y, scaling_flux). Upsampling and downsampling of the
-                        image corresponds to *scaling_x/y* > 1 and 0 < *scaling_x/y* < 1,
-                        respectively.
-        :type scaling: (float, float, float)
-        :param pixscale: Adjust the pixel scale by the average scaling in x and y direction.
-        :type pixscale: bool
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry that is read as input.
-        :type image_in_tag: str
-        :param image_out_tag: Tag of the database entry that is written as output. Should be
-                              different from *image_in_tag*.
-        :type image_out_tag: str
+        Parameters
+        ----------
+        scaling : tuple(float, float, float)
+            Tuple with the scaling factors for the image size and flux, (scaling_x, scaling_y,
+            scaling_flux). Upsampling and downsampling of the image corresponds to
+            *scaling_x/y* > 1 and 0 < *scaling_x/y* < 1, respectively.
+        pixscale : bool
+            Adjust the pixel scale by the average scaling in x and y direction.
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry that is read as input.
+        image_out_tag : str
+            Tag of the database entry that is written as output. Should be different from
+            *image_in_tag*.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(ScaleImagesModule, self).__init__(name_in=name_in)
@@ -155,7 +168,10 @@ class ScaleImagesModule(ProcessingModule):
         Run method of the module. Rescales an image with a fifth order spline interpolation and a
         reflecting boundary condition.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         pixscale = self.m_image_in_port.get_attribute("PIXSCALE")
@@ -181,9 +197,8 @@ class ScaleImagesModule(ProcessingModule):
                   str("{:.2f}".format(self.m_scaling_y)) + ", " + \
                   str("{:.2f}".format(self.m_scaling_flux)) + ")"
 
-        self.m_image_out_port.add_history_information("ScaleImagesModule", history)
-
-        self.m_image_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        self.m_image_out_port.add_history("ScaleImagesModule", history)
+        self.m_image_out_port.copy_attributes(self.m_image_in_port)
 
         if self.m_pixscale:
             mean_scaling = (self.m_scaling_x+self.m_scaling_y)/2.
@@ -205,18 +220,22 @@ class AddLinesModule(ProcessingModule):
         """
         Constructor of AddLinesModule.
 
-        :param lines: Tuple with the number of lines that are added in left, right, bottom, and
-                      top direction.
-        :type lines: (int, int, int, int)
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry that is read as input.
-        :type image_in_tag: str
-        :param image_out_tag: Tag of the database entry that is written as output, including the
-                              images with increased size. Should be different from *image_in_tag*.
-        :type image_out_tag: str
+        Parameters
+        ----------
+        lines : tuple(int, int, int, int)
+            The number of lines that are added in left, right, bottom, and top direction.
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry that is read as input.
+        image_out_tag : str
+            Tag of the database entry that is written as output, including the images with
+            increased size. Should be different from *image_in_tag*.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(AddLinesModule, self).__init__(name_in)
@@ -230,7 +249,10 @@ class AddLinesModule(ProcessingModule):
         """
         Run method of the module. Adds lines of zero-value pixels to increase the size of an image.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         shape_in = self.m_image_in_port.get_shape()
@@ -258,8 +280,9 @@ class AddLinesModule(ProcessingModule):
                                       self.m_image_out_port,
                                       "Running AddLinesModule...")
 
-        self.m_image_out_port.add_history_information("Lines added", str(self.m_lines))
-        self.m_image_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        history = "number of lines = "+str(self.m_lines)
+        self.m_image_out_port.add_history("AddLinesModule", history)
+        self.m_image_out_port.copy_attributes(self.m_image_in_port)
         self.m_image_out_port.close_port()
 
 
@@ -276,18 +299,22 @@ class RemoveLinesModule(ProcessingModule):
         """
         Constructor of RemoveLinesModule.
 
-        :param lines: Tuple with the number of lines that are removed in left, right, bottom,
-                      and top direction.
-        :type lines: (int, int, int, int)
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry that is read as input.
-        :type image_in_tag: str
-        :param image_out_tag: Tag of the database entry that is written as output, including the
-                              images with decreased size. Should be different from *image_in_tag*.
-        :type image_out_tag: str
+        Parameters
+        ----------
+        lines : tuple(int, int, int, int)
+            The number of lines that are removed in left, right, bottom, and top direction.
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry that is read as input.
+        image_out_tag : str
+            Tag of the database entry that is written as output, including the images with
+            decreased size. Should be different from *image_in_tag*.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(RemoveLinesModule, self).__init__(name_in)
@@ -301,7 +328,10 @@ class RemoveLinesModule(ProcessingModule):
         """
         Run method of the module. Removes the lines given by *lines* from each frame.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         def _remove_lines(image_in):
@@ -315,6 +345,7 @@ class RemoveLinesModule(ProcessingModule):
                                       self.m_image_out_port,
                                       "Running RemoveLinesModule...")
 
-        self.m_image_out_port.add_history_information("Lines removed", str(self.m_lines))
-        self.m_image_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        history = "number of lines = "+str(self.m_lines)
+        self.m_image_out_port.add_history("RemoveLinesModule", history)
+        self.m_image_out_port.copy_attributes(self.m_image_in_port)
         self.m_image_out_port.close_port()

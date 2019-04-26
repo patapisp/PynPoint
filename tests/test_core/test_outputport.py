@@ -362,7 +362,7 @@ class TestOutputPort(object):
             control.get_attribute("attr3")
 
         assert len(warning) == 1
-        assert warning[0].message.args[0] == "No attribute found - requested: attr3."
+        assert warning[0].message.args[0] == "The attribute 'attr3' was not found."
 
         out_port.activate()
         out_port.del_all_attributes()
@@ -378,7 +378,7 @@ class TestOutputPort(object):
         # check that only one warning was raised
         assert len(warning) == 1
         # check that the message matches
-        assert warning[0].message.args[0] == "Can not save attribute while no data exists."
+        assert warning[0].message.args[0] == "Can not store attribute if data tag does not exist."
 
         out_port.del_all_attributes()
         out_port.del_all_data()
@@ -415,46 +415,7 @@ class TestOutputPort(object):
         out_port.del_all_attributes()
         out_port.del_all_data()
 
-    def test_add_value_to_static_attribute(self):
-        out_port = self.create_output_port("new_data")
-        out_port.set_all([1])
-        out_port.add_attribute("attr1", value=4)
-
-        control = self.create_input_port("new_data")
-        assert control.get_attribute("attr1") == 4
-        out_port.add_value_to_static_attribute("attr1", value=2)
-        assert control.get_attribute("attr1") == 6
-
-        out_port.deactivate()
-        out_port.add_value_to_static_attribute("attr1", value=2)
-        assert control.get_attribute("attr1") == 6
-
-        out_port.del_all_attributes()
-        out_port.del_all_data()
-
-    def test_add_value_to_static_attribute_error(self):
-        # add non int or float data
-        out_port = self.create_output_port("new_data")
-        out_port.set_all([1])
-        out_port.add_attribute("attr1", value="test")
-
-        control = self.create_input_port("new_data")
-        assert control.get_attribute("attr1") == "test"
-        with pytest.raises(ValueError) as error:
-            out_port.add_value_to_static_attribute("attr1", value="test")
-
-        assert str(error.value) == "Only integer and float values can be added to an existing " \
-                                   "attribute."
-
-        # add data to not existing attribute
-        with pytest.raises(AttributeError) as error2:
-            out_port.add_value_to_static_attribute("attr42", value=3)
-        assert error2.value, "Value can not be added to a not existing attribute."
-
-        out_port.del_all_attributes()
-        out_port.del_all_data()
-
-    def test_copy_attributes_from_input_port(self):
+    def test_copy_attributes(self):
         out_port = self.create_output_port("new_data")
         out_port.del_all_attributes()
         out_port.del_all_data()
@@ -477,7 +438,7 @@ class TestOutputPort(object):
         copy_port.add_attribute("attr_non_static", [3, 4, 44, 6], static=False)
 
         control = self.create_input_port("new_data")
-        copy_port.copy_attributes_from_input_port(control)
+        copy_port.copy_attributes(control)
 
         copy_control = self.create_input_port("other_data")
 
@@ -494,7 +455,7 @@ class TestOutputPort(object):
 
         port = self.create_output_port("test")
         port.deactivate()
-        assert port.copy_attributes_from_input_port(control) is None
+        assert port.copy_attributes(control) is None
 
         port = self.create_input_port("test")
 
@@ -505,7 +466,7 @@ class TestOutputPort(object):
         assert warning[0].message.args[0] == "No data under the tag which is linked by the " \
                                              "InputPort."
 
-    def test_copy_attributes_from_input_port_same_tag(self):
+    def test_copy_attributes_same_tag(self):
         out_port1 = self.create_output_port("new_data")
         out_port1.set_all([0, ])
 
@@ -515,7 +476,7 @@ class TestOutputPort(object):
         out_port1.add_attribute("attr1", 2)
 
         control1 = self.create_input_port("new_data")
-        out_port2.copy_attributes_from_input_port(control1)
+        out_port2.copy_attributes(control1)
 
         control2 = self.create_input_port("new_data")
         assert control2.get_attribute("attr1") == 2
@@ -544,7 +505,7 @@ class TestOutputPort(object):
             control.get_attribute("attr1")
 
         assert len(warning) == 1
-        assert warning[0].message.args[0] == "No attribute found - requested: attr1."
+        assert warning[0].message.args[0] == "The attribute 'attr1' was not found."
 
         assert control.get_attribute("attr2") == 5
 
@@ -552,7 +513,7 @@ class TestOutputPort(object):
             control.get_attribute("attr_non_static_1")
 
         assert len(warning) == 1
-        assert warning[0].message.args[0] == "No attribute found - requested: attr_non_static_1."
+        assert warning[0].message.args[0] == "The attribute 'attr_non_static_1' was not found."
 
         assert np.array_equal(control.get_attribute("attr_non_static_2"), [2, 4, 6, 8])
 
@@ -598,20 +559,20 @@ class TestOutputPort(object):
             control.get_attribute("attr_1")
 
         assert len(warning) == 1
-        assert warning[0].message.args[0] == "No attribute found - requested: attr_1."
+        assert warning[0].message.args[0] == "The attribute 'attr_1' was not found."
 
         with pytest.warns(UserWarning) as warning:
             control.get_attribute("attr_2")
 
         assert len(warning) == 1
-        assert warning[0].message.args[0] == "No attribute found - requested: attr_2."
+        assert warning[0].message.args[0] == "The attribute 'attr_2' was not found."
 
         out_port.del_all_data()
 
-    def test_add_history_information(self):
+    def test_add_history(self):
         out_port = self.create_output_port("new_data")
         out_port.set_all([0, ])
-        out_port.add_history_information("Test", "history")
+        out_port.add_history("Test", "history")
 
         control = self.create_input_port("new_data")
         assert control.get_attribute("History: Test") == "history"

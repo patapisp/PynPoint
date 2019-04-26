@@ -1,34 +1,32 @@
 """
-Modules for photometric and astrometric measurements of a planet.
+Pipeline modules for photometric and astrometric measurements.
 """
 
 from __future__ import absolute_import
 from __future__ import print_function
 
-import math
 import sys
 
 import numpy as np
 import emcee
 
 from six.moves import range
-from scipy.stats import t
 from scipy.optimize import minimize
 from photutils import aperture_photometry, CircularAperture
 
 from pynpoint.core.processing import ProcessingModule
 from pynpoint.util.analysis import fake_planet, merit_function, false_alarm
-from pynpoint.util.image import create_mask, polar_to_cartesian
+from pynpoint.util.image import create_mask, polar_to_cartesian, cartesian_to_polar, \
+                                center_subpixel
 from pynpoint.util.mcmc import lnprob
-from pynpoint.util.module import progress, memory_frames, image_size_port, number_images_port, \
-                                 rotate_coordinates
+from pynpoint.util.module import progress, memory_frames, rotate_coordinates
 from pynpoint.util.psf import pca_psf_subtraction
 from pynpoint.util.residuals import combine_residuals
 
 
 class FakePlanetModule(ProcessingModule):
     """
-    Module to inject a positive or negative fake companion into a stack of images.
+    Pipeline module to inject a positive or negative artificial planet into a stack of images.
     """
 
     def __init__(self,
@@ -43,31 +41,34 @@ class FakePlanetModule(ProcessingModule):
         """
         Constructor of FakePlanetModule.
 
-        :param position: Angular separation (arcsec) and position angle (deg) of the fake planet.
-                         Angle is measured in counterclockwise direction with respect to the
-                         upward direction (i.e., East of North).
-        :type position: (float, float)
-        :param magnitude: Magnitude of the fake planet with respect to the star.
-        :type magnitude: float
-        :param psf_scaling: Additional scaling factor of the planet flux (e.g., to correct for a
-                            neutral density filter). A negative value will inject a negative
-                            planet signal.
-        :type psf_scaling: float
-        :param interpolation: Type of interpolation that is used for shifting the images (spline,
-                              bilinear, or fft).
-        :type interpolation: str
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry with images that are read as input.
-        :type image_in_tag: str
-        :param psf_in_tag: Tag of the database entry that contains the reference PSF that is used
-                           as fake planet. Can be either a single image (2D) or a cube (3D) with
-                           the dimensions equal to *image_in_tag*.
-        :type psf_in_tag: str
-        :param image_out_tag: Tag of the database entry with images that are written as output.
-        :type image_out_tag: str
+        Parameters
+        ----------
+        position : tuple(float, float)
+            Angular separation (arcsec) and position angle (deg) of the fake planet. Angle is
+            measured in counterclockwise direction with respect to the upward direction (i.e.,
+            East of North).
+        magnitude : float
+            Magnitude of the fake planet with respect to the star.
+        psf_scaling : float
+            Additional scaling factor of the planet flux (e.g., to correct for a neutral density
+            filter). A negative value will inject a negative planet signal.
+        interpolation : str
+            Type of interpolation that is used for shifting the images (spline, bilinear, or fft).
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry with images that are read as input.
+        psf_in_tag : str
+            Tag of the database entry that contains the reference PSF that is used as fake planet.
+            Can be either a single image (2D) or a cube (3D) with the dimensions equal to
+            *image_in_tag*.
+        image_out_tag : str
+            Tag of the database entry with images that are written as output.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(FakePlanetModule, self).__init__(name_in)
@@ -86,111 +87,81 @@ class FakePlanetModule(ProcessingModule):
         self.m_psf_scaling = psf_scaling
         self.m_interpolation = interpolation
 
-    def _init(self):
-        memory = self._m_config_port.get_attribute("MEMORY")
-
-        ndim_image = self.m_image_in_port.get_ndim()
-        ndim_psf = self.m_psf_in_port.get_ndim()
-
-        if ndim_image != 3:
-            raise ValueError("The image_in_tag should contain a cube of images.")
-
-        nimages = number_images_port(self.m_image_in_port)
-        im_size = image_size_port(self.m_image_in_port)
-        frames = memory_frames(memory, nimages)
-
-        npsf = number_images_port(self.m_psf_in_port)
-        psf_size = image_size_port(self.m_psf_in_port)
-
-        if psf_size != im_size:
-            raise ValueError("The images in '"+self.m_image_in_port.tag+"' should have the same "
-                             "dimensions as the images images in '"+self.m_psf_in_port.tag+"'.")
-
-        if ndim_psf == 3 and npsf == 1:
-            psf = np.squeeze(self.m_psf_in_port.get_all(), axis=0)
-            ndim_psf = psf.ndim
-
-        elif ndim_psf == 2:
-            psf = self.m_psf_in_port.get_all()
-
-        elif ndim_psf == 3 and nimages != npsf:
-            psf = np.zeros((self.m_psf_in_port.get_shape()[1],
-                            self.m_psf_in_port.get_shape()[2]))
-
-            frames_psf = memory_frames(memory, npsf)
-
-            for i, _ in enumerate(frames_psf[:-1]):
-                psf += np.sum(self.m_psf_in_port[frames_psf[i]:frames_psf[i+1]], axis=0)
-
-            psf /= float(npsf)
-
-            ndim_psf = psf.ndim
-
-        elif ndim_psf == 3 and nimages == npsf:
-            psf = None
-
-        return psf, ndim_psf, ndim_image, frames
-
     def run(self):
         """
-        Run method of the module. Shifts the reference PSF to the location of the fake planet
-        with an additional correction for the parallactic angle and writes the stack with images
-        with the injected planet signal.
+        Run method of the module. Shifts the PSF template to the location of the fake planet
+        with an additional correction for the parallactic angle and an optional flux scaling.
+        The stack of images with the injected planet signal is stored.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         self.m_image_out_port.del_all_data()
         self.m_image_out_port.del_all_attributes()
 
+        memory = self._m_config_port.get_attribute("MEMORY")
         parang = self.m_image_in_port.get_attribute("PARANG")
         pixscale = self.m_image_in_port.get_attribute("PIXSCALE")
 
         self.m_position = (self.m_position[0]/pixscale, self.m_position[1])
 
-        psf, ndim_psf, ndim, frames = self._init()
+        im_shape = self.m_image_in_port.get_shape()
+        psf_shape = self.m_psf_in_port.get_shape()
+
+        if psf_shape[0] != 1 and psf_shape[0] != im_shape[0]:
+            raise ValueError('The number of frames in psf_in_tag does not match with the number '
+                             'of frames in image_in_tag. The DerotateAndStackModule can be '
+                             'used to average the PSF frames (without derotating) before applying '
+                             'the FakePlanetModule.')
+
+        if psf_shape[-2:] != im_shape[-2:]:
+            raise ValueError("The images in '"+self.m_image_in_port.tag+"' should have the same "
+                             "dimensions as the images images in '"+self.m_psf_in_port.tag+"'.")
+
+        frames = memory_frames(memory, im_shape[0])
 
         for j, _ in enumerate(frames[:-1]):
             progress(j, len(frames[:-1]), "Running FakePlanetModule...")
 
-            images = np.copy(self.m_image_in_port[frames[j]:frames[j+1]])
+            images = self.m_image_in_port[frames[j]:frames[j+1]]
             angles = parang[frames[j]:frames[j+1]]
 
-            if ndim_psf == 3:
-                psf = np.copy(images)
+            if psf_shape[0] == 1:
+                psf = self.m_psf_in_port.get_all()
+            else:
+                psf = self.m_psf_in_port[frames[j]:frames[j+1]]
 
-            im_fake = fake_planet(images,
-                                  psf,
-                                  angles,
-                                  self.m_position,
-                                  self.m_magnitude,
-                                  self.m_psf_scaling,
+            im_fake = fake_planet(images=images,
+                                  psf=psf,
+                                  parang=angles,
+                                  position=self.m_position,
+                                  magnitude=self.m_magnitude,
+                                  psf_scaling=self.m_psf_scaling,
                                   interpolation="spline")
 
-            if ndim == 2:
+            if j == 0:
                 self.m_image_out_port.set_all(im_fake)
-            elif ndim == 3:
+            else:
                 self.m_image_out_port.append(im_fake, data_dim=3)
 
         sys.stdout.write("Running FakePlanetModule... [DONE]\n")
         sys.stdout.flush()
 
-        self.m_image_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        history = "(sep, angle, mag) = ("+"{0:.2f}".format(self.m_position[0]*pixscale)+", "+ \
+                  "{0:.2f}".format(self.m_position[1])+", "+"{0:.2f}".format(self.m_magnitude)+")"
 
-        self.m_image_out_port.add_history_information("FakePlanetModule",
-                                                      "(sep, angle, mag) = " + "(" + \
-                                                      "{0:.2f}".format(self.m_position[0]* \
-                                                       pixscale)+", "+ \
-                                                      "{0:.2f}".format(self.m_position[1])+", "+ \
-                                                      "{0:.2f}".format(self.m_magnitude)+")")
-
+        self.m_image_out_port.copy_attributes(self.m_image_in_port)
+        self.m_image_out_port.add_history("FakePlanetModule", history)
         self.m_image_out_port.close_port()
 
 
 class SimplexMinimizationModule(ProcessingModule):
     """
-    Module to measure the flux and position of a planet by injecting negative fake planets and
-    minimizing a function of merit.
+    Pipeline module to measure the flux and position of a planet by injecting negative fake planets
+    and minimizing a function of merit.
     """
 
     def __init__(self,
@@ -214,70 +185,67 @@ class SimplexMinimizationModule(ProcessingModule):
         """
         Constructor of SimplexMinimizationModule.
 
-        :param position: Approximate position (x, y) of the planet (pix). This is also the location
-                         where the function of merit is calculated with an aperture of radius
-                         *aperture*.
-        :type position: (float, float)
-        :param magnitude: Approximate magnitude of the planet relative to the star.
-        :type magnitude: float
-        :param psf_scaling: Additional scaling factor of the planet flux (e.g., to correct for a
-                            neutral density filter). Should be negative in order to inject
-                            negative fake planets.
-        :type psf_scaling: float
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry with images that are read as input.
-        :type image_in_tag: str
-        :param psf_in_tag: Tag of the database entry with the reference PSF that is used as fake
-                           planet. Can be either a single image (2D) or a cube (3D) with the
-                           dimensions equal to *image_in_tag*.
-        :type psf_in_tag: str
-        :param res_out_tag: Tag of the database entry with the image residuals that are written
-                            as output. Contains the results from the PSF subtraction during the
-                            minimization of the function of merit. The last image is the image
-                            with the best-fit residuals.
-        :type res_out_tag: str
-        :param flux_position_tag: Tag of the database entry with flux and position results that are
-                                  written as output. Each step of the minimization saves the
-                                  x position (pix), y position (pix), separation (arcsec),
-                                  angle (deg), contrast (mag), and the function of merit. The last
-                                  row of values contain the best-fit results.
-        :type flux_position_tag: str
-        :param merit: Function of merit for the minimization. Can be either *hessian*, to minimize
-                      the sum of the absolute values of the determinant of the Hessian matrix,
-                      or *sum*, to minimize the sum of the absolute pixel values
-                      (Wertz et al. 2017).
-        :type merit: str
-        :param aperture: Either the aperture radius (arcsec) at the position specified at *position*
-                         or a dictionary with the aperture properties. See
-                         Util.AnalysisTools.create_aperture for details.
-        :type aperture: float
-        :param sigma: Standard deviation (arcsec) of the Gaussian kernel which is used to smooth
-                      the images before the function of merit is calculated (in order to reduce
-                      small pixel-to-pixel variations).
-        :type sigma: float
-        :param tolerance: Absolute error on the input parameters, position (pix) and
-                          contrast (mag), that is used as acceptance level for convergence. Note
-                          that only a single value can be specified which is used for both the
-                          position and flux so tolerance=0.1 will give a precision of 0.1 mag
-                          and 0.1 pix. The tolerance on the output (i.e., function of merit)
-                          is set to np.inf so the condition is always met.
-        :type tolerance: float
-        :param pca_number: Number of principal components used for the PSF subtraction.
-        :type pca_number: int
-        :param cent_size: Radius of the central mask (arcsec). No mask is used when set to None.
-        :type cent_size: float
-        :param edge_size: Outer radius (arcsec) beyond which pixels are masked. No outer mask is
-                          used when set to None. The radius will be set to half the image size if
-                          the *edge_size* value is larger than half the image size.
-        :type edge_size: float
-        :param extra_rot: Additional rotation angle of the images in clockwise direction (deg).
-        :type extra_rot: float
-        :param residuals: Method used for combining the residuals ("mean", "median", "weighted",
-                          or "clipped").
-        :type residuals: str
+        Parameters
+        ----------
+        position : tuple(float, float)
+            Approximate position (x, y) of the planet (pix). This is also the location where the
+            function of merit is calculated with an aperture of radius *aperture*.
+        magnitude : float
+            Approximate magnitude of the planet relative to the star.
+        psf_scaling : float
+            Additional scaling factor of the planet flux (e.g., to correct for a neutral density
+            filter). Should be negative in order to inject negative fake planets.
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry with images that are read as input.
+        psf_in_tag : str
+            Tag of the database entry with the reference PSF that is used as fake planet. Can be
+            either a single image (2D) or a cube (3D) with the dimensions equal to *image_in_tag*.
+        res_out_tag : str
+            Tag of the database entry with the image residuals that are written as output. Contains
+            the results from the PSF subtraction during the minimization of the function of merit.
+            The last image is the image with the best-fit residuals.
+        flux_position_tag : str
+            Tag of the database entry with flux and position results that are written as output.
+            Each step of the minimization saves the x position (pix), y position (pix), separation
+            (arcsec), angle (deg), contrast (mag), and the function of merit. The last row of
+            values contain the best-fit results.
+        merit : str
+            Function of merit for the minimization. Can be either *hessian*, to minimize the sum of
+            the absolute values of the determinant of the Hessian matrix, or *sum*, to minimize the
+            sum of the absolute pixel values (Wertz et al. 2017).
+        aperture : float
+            Either the aperture radius (arcsec) at the position specified at *position* or a
+            dictionary with the aperture properties. See
+            :class:`~pynpoint.util.analysis.create_aperture` for details.
+        sigma : float
+            Standard deviation (arcsec) of the Gaussian kernel which is used to smooth the images
+            before the function of merit is calculated (in order to reduce small pixel-to-pixel
+            variations).
+        tolerance : float
+            Absolute error on the input parameters, position (pix) and contrast (mag), that is used
+            as acceptance level for convergence. Note that only a single value can be specified
+            which is used for both the position and flux so tolerance=0.1 will give a precision of
+            0.1 mag and 0.1 pix. The tolerance on the output (i.e., function of merit) is set to
+            np.inf so the condition is always met.
+        pca_number : int
+            Number of principal components used for the PSF subtraction.
+        cent_size : float
+            Radius of the central mask (arcsec). No mask is used when set to None.
+        edge_size : float
+            Outer radius (arcsec) beyond which pixels are masked. No outer mask is used when set to
+            None. The radius will be set to half the image size if the *edge_size* value is larger
+            than half the image size.
+        extra_rot : float
+            Additional rotation angle of the images in clockwise direction (deg).
+        residuals : str
+            Method used for combining the residuals ("mean", "median", "weighted", or "clipped").
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(SimplexMinimizationModule, self).__init__(name_in)
@@ -313,7 +281,10 @@ class SimplexMinimizationModule(ProcessingModule):
         image curvature which is calculated as the sum of the absolute values of the
         determinant of the Hessian matrix.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         self.m_res_out_port.del_all_data()
@@ -348,11 +319,11 @@ class SimplexMinimizationModule(ProcessingModule):
             self.m_edge_size /= pixscale
 
         psf = self.m_psf_in_port.get_all()
-        center = (psf.shape[-2]/2., psf.shape[-1]/2.)
-
         images = self.m_image_in_port.get_all()
 
-        if psf.ndim == 3 and psf.shape[0] != images.shape[0]:
+        center = center_subpixel(psf)
+
+        if psf.shape[0] != 1 and psf.shape[0] != images.shape[0]:
             raise ValueError('The number of frames in psf_in_tag does not match with the number '
                              'of frames in image_in_tag. The DerotateAndStackModule can be '
                              'used to average the PSF frames (without derotating) before applying '
@@ -366,13 +337,12 @@ class SimplexMinimizationModule(ProcessingModule):
             pos_x = arg[1]
             mag = arg[2]
 
-            sep = math.sqrt((pos_y-center[0])**2+(pos_x-center[1])**2)
-            ang = math.atan2(pos_y-center[0], pos_x-center[1])*180./math.pi - 90.
+            sep_ang = cartesian_to_polar(center, pos_x, pos_y)
 
             fake = fake_planet(images=images,
                                psf=psf,
                                parang=parang,
-                               position=(sep, ang),
+                               position=(sep_ang[0], sep_ang[1]),
                                magnitude=mag,
                                psf_scaling=self.m_psf_scaling)
 
@@ -388,7 +358,7 @@ class SimplexMinimizationModule(ProcessingModule):
 
             self.m_res_out_port.append(stack, data_dim=3)
 
-            merit = merit_function(residuals=stack,
+            merit = merit_function(residuals=stack[0, ],
                                    function=self.m_merit,
                                    variance="poisson",
                                    aperture=self.m_aperture,
@@ -398,8 +368,8 @@ class SimplexMinimizationModule(ProcessingModule):
 
             res = np.asarray((position[1],
                               position[0],
-                              sep*pixscale,
-                              (ang-self.m_extra_rot)%360.,
+                              sep_ang[0]*pixscale,
+                              (sep_ang[1]-self.m_extra_rot)%360.,
                               mag,
                               merit))
 
@@ -421,27 +391,25 @@ class SimplexMinimizationModule(ProcessingModule):
                  x0=[pos_init[0], pos_init[1], self.m_magnitude],
                  method="Nelder-Mead",
                  tol=None,
-                 options={'xatol': self.m_tolerance, 'fatol': float("inf")})
+                 options={'xatol':self.m_tolerance, 'fatol':float("inf")})
 
         sys.stdout.write(" [DONE]\n")
         sys.stdout.flush()
 
-        self.m_res_out_port.add_history_information("SimplexMinimizationModule",
-                                                    "Merit function = "+str(self.m_merit))
+        history = "merit = "+str(self.m_merit)
+        self.m_flux_position_port.copy_attributes(self.m_image_in_port)
+        self.m_flux_position_port.add_history("SimplexMinimizationModule", history)
 
-        self.m_flux_position_port.add_history_information("SimplexMinimizationModule",
-                                                          "Merit function = "+str(self.m_merit))
-
-        self.m_res_out_port.copy_attributes_from_input_port(self.m_image_in_port)
-        self.m_flux_position_port.copy_attributes_from_input_port(self.m_image_in_port)
-
+        self.m_res_out_port.copy_attributes(self.m_image_in_port)
+        self.m_res_out_port.add_history("SimplexMinimizationModule", history)
         self.m_res_out_port.close_port()
 
 
 class FalsePositiveModule(ProcessingModule):
     """
-    Module to calculate the signal-to-noise ratio (SNR) and false positive fraction (FPF) at a
-    specified location in an image by using the Student's t-test (Mawet et al. 2014).
+    Pipeline module to calculate the signal-to-noise ratio (SNR) and false positive fraction (FPF)
+    at a specified location in an image by using the Student's t-test (Mawet et al. 2014).
+    Optionally, the SNR can be optimized with the aperture position as free parameter.
     """
 
     def __init__(self,
@@ -450,33 +418,52 @@ class FalsePositiveModule(ProcessingModule):
                  ignore=False,
                  name_in="snr",
                  image_in_tag="im_arr",
-                 snr_out_tag="snr_fpf"):
+                 snr_out_tag="snr_fpf",
+                 optimize=False,
+                 **kwargs):
         """
         Constructor of FalsePositiveModule.
 
-        :param position: The x and y position (pix) where the SNR and FPF is calculated. Note that
-                         the bottom left of the image is defined as (0, 0) so there is a -0.5
-                         offset with respect to the DS9 coordinate system. Aperture photometry
-                         corrects for the partial inclusion of pixels at the boundary.
-        :type position: (float, float)
-        :param aperture: Aperture radius (arcsec).
-        :type aperture: float
-        :param ignore: Ignore the two neighboring apertures that may contain self-subtraction from
-                       the planet.
-        :type ignore: bool
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry with the images that are read as input.
-        :type image_in_tag: str
-        :param snr_out_tag: Tag of the database entry that is written as output. The output format
-                            is: (x position (pix), y position (pix), separation (arcsec), position
-                            angle (deg), SNR, FPF). The position angle is measured in
-                            counterclockwise direction with respect to the upward direction (i.e.,
-                            East of North).
-        :type snr_out_tag: str
+        Parameters
+        ----------
+        position : tuple(float, float)
+            The x and y position (pix) where the SNR and FPF is calculated. Note that the bottom
+            left of the image is defined as (-0.5, -0.5) so there is a -1.0 offset with respect
+            to the DS9 coordinate system. Aperture photometry corrects for the partial inclusion
+            of pixels at the boundary.
+        aperture : float
+            Aperture radius (arcsec).
+        ignore : bool
+            Ignore the two neighboring apertures that may contain self-subtraction from the planet.
+        name_in: str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry with the images that are read as input.
+        snr_out_tag : str
+            Tag of the database entry that is written as output. The output format is: (x position
+            (pix), y position (pix), separation (arcsec), position angle (deg), SNR, FPF). The
+            position angle is measured in counterclockwise direction with respect to the upward
+            direction (i.e., East of North).
+        optimize : bool
+            Optimize the SNR. The aperture position is written in the history. The size of the
+            aperture is kept fixed.
 
-        :return: None
+        Keyword arguments
+        -----------------
+        tolerance : float
+            The absolute tolerance (pix) on the position for the optimization to end. Default is
+            set to 0.01 pix.
+
+        Returns
+        -------
+        NoneType
+            None
         """
+
+        if "tolerance" in kwargs:
+            self.m_tolerance = kwargs["tolerance"]
+        else:
+            self.m_tolerance = 1e-2
 
         super(FalsePositiveModule, self).__init__(name_in)
 
@@ -486,15 +473,34 @@ class FalsePositiveModule(ProcessingModule):
         self.m_position = position
         self.m_aperture = aperture
         self.m_ignore = ignore
+        self.m_optimize = optimize
 
     def run(self):
         """
         Run method of the module. Calculates the SNR and FPF for a specified position in a post-
-        processed image with the Student's t-test (Mawet et al. 2014). This approach accounts
-        for small sample statistics.
+        processed image with the Student's t-test (Mawet et al. 2014). This approach assumes
+        Gaussian noise but accounts for small sample statistics.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
+
+        def _fpf_minimize(arg):
+            pos_x, pos_y = arg
+
+            try:
+                _, _, _, fpf = false_alarm(image=image,
+                                           x_pos=pos_x,
+                                           y_pos=pos_y,
+                                           size=self.m_aperture,
+                                           ignore=self.m_ignore)
+
+            except ValueError:
+                fpf = float('inf')
+
+            return fpf
 
         self.m_snr_out_port.del_all_data()
         self.m_snr_out_port.del_all_attributes()
@@ -502,73 +508,57 @@ class FalsePositiveModule(ProcessingModule):
         pixscale = self.m_image_in_port.get_attribute("PIXSCALE")
         self.m_aperture /= pixscale
 
-        nimages = number_images_port(self.m_image_in_port)
-        center = self.m_image_in_port.get_shape()[-1]/2.
-
-        sep = math.sqrt((center-self.m_position[0])**2.+(center-self.m_position[1])**2.)
-        ang = (math.atan2(self.m_position[1]-center,
-                          self.m_position[0]-center)*180./math.pi - 90.)%360.
-
-        num_ap = int(math.pi*sep/self.m_aperture)
-        ap_theta = np.linspace(0, 2.*math.pi, num_ap, endpoint=False)
-
-        if self.m_ignore:
-            num_ap -= 2
-            ap_theta = np.delete(ap_theta, [1, np.size(ap_theta)-1])
+        nimages = self.m_image_in_port.get_shape()[0]
 
         for j in range(nimages):
             progress(j, nimages, "Running FalsePositiveModule...")
 
-            if nimages == 1:
-                image = self.m_image_in_port.get_all()
-                if image.ndim == 3:
-                    image = np.squeeze(image, axis=0)
+            image = self.m_image_in_port[j, ]
+            center = center_subpixel(image)
+
+            if self.m_optimize:
+                result = minimize(fun=_fpf_minimize,
+                                  x0=[self.m_position[0], self.m_position[1]],
+                                  method="Nelder-Mead",
+                                  tol=None,
+                                  options={'xatol':self.m_tolerance, 'fatol':float("inf")})
+
+                _, _, snr, fpf = false_alarm(image=image,
+                                             x_pos=result.x[0],
+                                             y_pos=result.x[1],
+                                             size=self.m_aperture,
+                                             ignore=self.m_ignore)
+
+                x_pos, y_pos = result.x[0], result.x[1]
 
             else:
-                image = self.m_image_in_port[j, ]
+                _, _, snr, fpf = false_alarm(image=image,
+                                             x_pos=self.m_position[0],
+                                             y_pos=self.m_position[1],
+                                             size=self.m_aperture,
+                                             ignore=self.m_ignore)
 
-            ap_phot = np.zeros(num_ap)
-            for i, theta in enumerate(ap_theta):
-                x_tmp = center + (self.m_position[0]-center)*math.cos(theta) - \
-                                 (self.m_position[1]-center)*math.sin(theta)
-                y_tmp = center + (self.m_position[0]-center)*math.sin(theta) + \
-                                 (self.m_position[1]-center)*math.cos(theta)
+                x_pos, y_pos = self.m_position[0], self.m_position[1]
 
-                aperture = CircularAperture((x_tmp, y_tmp), self.m_aperture)
-                phot_table = aperture_photometry(image, aperture, method='exact')
-                ap_phot[i] = phot_table['aperture_sum']
+            sep_ang = cartesian_to_polar(center, x_pos, y_pos)
+            result = np.column_stack((x_pos, y_pos, sep_ang[0]*pixscale, sep_ang[1], snr, fpf))
 
-            snr = (ap_phot[0] - np.mean(ap_phot[1:])) / \
-                  (np.std(ap_phot[1:]) * math.sqrt(1.+1./float(num_ap-1)))
-
-            fpf = 1. - t.cdf(snr, num_ap-2)
-
-            result = np.column_stack((self.m_position[0],
-                                      self.m_position[1],
-                                      sep*pixscale,
-                                      ang,
-                                      snr,
-                                      fpf))
-
-            if nimages == 1:
-                self.m_snr_out_port.set_all(result)
-            else:
-                self.m_snr_out_port.append(result, data_dim=2)
+            self.m_snr_out_port.append(result, data_dim=2)
 
         sys.stdout.write("Running FalsePositiveModule... [DONE]\n")
         sys.stdout.flush()
 
         history = "aperture [arcsec] = "+str("{:.2f}".format(self.m_aperture*pixscale))
-        self.m_snr_out_port.add_history_information("FalsePositiveModule", history)
-        self.m_snr_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        self.m_snr_out_port.copy_attributes(self.m_image_in_port)
+        self.m_snr_out_port.add_history("FalsePositiveModule", history)
         self.m_snr_out_port.close_port()
 
 
 class MCMCsamplingModule(ProcessingModule):
     """
-    Module to measure the separation, position angle, and contrast of a planet with injection of
-    negative artificial planets and sampling of the posterior distributions with emcee, an
-    affine invariant Markov chain Monte Carlo (MCMC) ensemble sampler.
+    Pipeline module to measure the separation, position angle, and contrast of a planet with
+    injection of negative artificial planets and sampling of the posterior distributions with
+    emcee, an affine invariant Markov chain Monte Carlo (MCMC) ensemble sampler.
     """
 
     def __init__(self,
@@ -592,70 +582,72 @@ class MCMCsamplingModule(ProcessingModule):
         """
         Constructor of MCMCsamplingModule.
 
-        :param param: Tuple with the approximate separation (arcsec), angle (deg), and contrast
-                      (mag), for example obtained with the SimplexMinimizationModule. The
-                      angle is measured in counterclockwise direction with respect to the upward
-                      direction (i.e., East of North). The specified separation and angle are also
-                      used as fixed position for the aperture if *aperture* contains a single
-                      value. Furthermore, the values are used to remove the planet signal before
-                      the noise is estimated when *variance* is set to "gaussian" to prevent
-                      that self-subtraction lobes bias the noise measurement.
-        :type param: tuple(float, float, float)
-        :param bounds: Tuple with the boundaries of the separation (arcsec), angle (deg), and
-                       contrast (mag). Each set of boundaries is specified as a tuple.
-        :type bounds: tuple(tuple(float, float), tuple(float, float), tuple(float, float))
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry with images that are read as input.
-        :type image_in_tag: str
-        :param psf_in_tag: Tag of the database entry with the reference PSF that is used as fake
-                           planet. Can be either a single image (2D) or a cube (3D) with the
-                           dimensions equal to *image_in_tag*.
-        :type psf_in_tag: str
-        :param chain_out_tag: Tag of the database entry with the Markov chain that is written as
-                              output. The shape of the array is (nwalkers*nsteps, 3).
-        :type chain_out_tag: str
-        :param nwalkers: Number of ensemble members (i.e. chains).
-        :type nwalkers: int
-        :param nsteps: Number of steps to run per walker.
-        :type nsteps: int
-        :param psf_scaling: Additional scaling factor of the planet flux (e.g., to correct for a
-                            neutral density filter). Should be negative in order to inject
-                            negative fake planets.
-        :type psf_scaling: float
-        :param pca_number: Number of principal components used for the PSF subtraction.
-        :type pca_number: int
-        :param aperture: Either the aperture radius (arcsec) at the position specified in *param*
-                         or a dictionary with the aperture properties. See
-                         Util.AnalysisTools.create_aperture for details.
-        :type aperture: float or dict
-        :param mask: Inner and outer mask radius (arcsec) for the PSF subtraction. Both elements of
-                     the tuple can be set to None. Masked pixels are excluded from the PCA
-                     computation, resulting in a smaller runtime.
-        :type mask: tuple(float, float)
-        :param extra_rot: Additional rotation angle of the images (deg).
-        :type extra_rot: float
-        :param prior: Prior can be set to "flat" or "aperture". With "flat", the values of *bounds*
-                      are used as uniform priors. With "aperture", the prior probability is set to
-                      zero beyond the aperture and unity within the aperture.
-        :type prior: str
-        :param variance: Variance used in the likelihood function ("poisson" or "gaussian").
-        :type variance: str
-        :param residuals: Method used for combining the residuals ("mean", "median", "weighted",
-                          or "clipped").
-        :type residuals: str
-        :param kwargs:
-            See below.
+        Parameters
+        ----------
+        param : tuple(float, float, float)
+            The approximate separation (arcsec), angle (deg), and contrast (mag), for example
+            obtained with the :class:`~pynpoint.processing.fluxposition.SimplexMinimizationModule`.
+            The angle is measured in counterclockwise direction with respect to the upward
+            direction (i.e., East of North). The specified separation and angle are also used as
+            fixed position for the aperture if *aperture* contains a single value. Furthermore,
+            the values are used to remove the planet signal before the noise is estimated when
+            *variance* is set to "gaussian" to prevent that self-subtraction lobes bias the noise
+            measurement.
+        bounds : tuple(tuple(float, float), tuple(float, float), tuple(float, float))
+            The boundaries of the separation (arcsec), angle (deg), and contrast (mag). Each set
+            of boundaries is specified as a tuple.
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry with images that are read as input.
+        psf_in_tag : str
+            Tag of the database entry with the reference PSF that is used as fake planet. Can be
+            either a single image (2D) or a cube (3D) with the dimensions equal to *image_in_tag*.
+        chain_out_tag : str
+            Tag of the database entry with the Markov chain that is written as output. The shape
+            of the array is (nwalkers*nsteps, 3).
+        nwalkers : int
+            Number of ensemble members (i.e. chains).
+        nsteps : int
+            Number of steps to run per walker.
+        psf_scaling : float
+            Additional scaling factor of the planet flux (e.g., to correct for a neutral density
+            filter). Should be negative in order to inject negative fake planets.
+        pca_number : int
+            Number of principal components used for the PSF subtraction.
+        aperture : float or dict
+            Either the aperture radius (arcsec) at the position specified in *param* or a
+            dictionary with the aperture properties. See for more information
+            :class:`~pynpoint.util.analysis.create_aperture`.
+        mask : tuple(float, float)
+            Inner and outer mask radius (arcsec) for the PSF subtraction. Both elements of the
+            tuple can be set to None. Masked pixels are excluded from the PCA computation,
+            resulting in a smaller runtime.
+        extra_rot : float
+            Additional rotation angle of the images (deg).
+        prior : str
+            Prior can be set to "flat" or "aperture". With "flat", the values of *bounds* are used
+            as uniform priors. With "aperture", the prior probability is set to zero beyond the
+            aperture and unity within the aperture.
+        variance : str
+            Variance used in the likelihood function ("poisson" or "gaussian").
+        residuals : str
+            Method used for combining the residuals ("mean", "median", "weighted", or "clipped").
 
-        :Keyword arguments:
-            **scale** (*float*) -- The proposal scale parameter (Goodman & Weare 2010).
+        Keyword arguments
+        -----------------
+        scale : float
+            The proposal scale parameter (Goodman & Weare 2010). The default is set to 2.
+        sigma : tuple(float, float, float)
+            The standard deviations that randomly initializes the start positions of the walkers in
+            a small ball around the a priori preferred position. The tuple should contain a value
+            for the separation (arcsec), position angle (deg), and contrast (mag). The default is
+            set to (1e-5, 1e-3, 1e-3).
 
-            **sigma** (*tuple(float, float, float)*) -- Tuple with the standard deviations that
-            randomly initializes the start positions of the walkers in a small ball around
-            the a priori preferred position. The tuple should contain a value for the
-            separation (arcsec), position angle (deg), and contrast (mag).
-
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         if "scale" in kwargs:
@@ -701,20 +693,25 @@ class MCMCsamplingModule(ProcessingModule):
         """
         Function to create or update the dictionary with aperture properties.
 
-        :param images: Input images.
-        :type images: numpy.ndarray
+        Parameters
+        ----------
+        images : numpy.ndarray
+            Input images.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         pixscale = self.m_image_in_port.get_attribute("PIXSCALE")
 
         if isinstance(self.m_aperture, float):
-            x_pos, y_pos = polar_to_cartesian(images, self.m_param[0]/pixscale, self.m_param[1])
+            xy_pos = polar_to_cartesian(images, self.m_param[0]/pixscale, self.m_param[1])
 
             self.m_aperture = {'type':'circular',
-                               'pos_x':x_pos,
-                               'pos_y':y_pos,
+                               'pos_x':xy_pos[0],
+                               'pos_y':xy_pos[1],
                                'radius':self.m_aperture/pixscale}
 
         elif isinstance(self.m_aperture, dict):
@@ -739,18 +736,22 @@ class MCMCsamplingModule(ProcessingModule):
         variance parameter is set to gaussian (see Mawet et al. 2014). The planet is first removed
         from the dataset with the values specified as *param* in the constructor of the instance.
 
-        :param images: Input images.
-        :type images: numpy.ndarray
-        :param psf: PSF template.
-        :type psf: numpy.ndarray
-        :param parang: Parallactic angles (deg).
-        :type parang: numpy.ndarray
-        :param aperture: Properties of the circular aperture. The radius recommended to be larger
-                         or equal to 0.5*lambda/D.
-        :type aperture: dict
+        Parameters
+        ----------
+        images : numpy.ndarray
+            Input images.
+        psf : numpy.ndarray
+            PSF template.
+        parang : numpy.ndarray
+            Parallactic angles (deg).
+        aperture : dict
+            Properties of the circular aperture. The radius is recommended to be larger than or
+            equal to 0.5*lambda/D.
 
-        :return: Variance.
-        :rtype: float
+        Returns
+        -------
+        float
+            Variance.
         """
 
         pixscale = self.m_image_in_port.get_attribute("PIXSCALE")
@@ -768,21 +769,25 @@ class MCMCsamplingModule(ProcessingModule):
 
         stack = combine_residuals(method=self.m_residuals, res_rot=res_arr)
 
-        noise, _, _ = false_alarm(image=stack,
-                                  x_pos=aperture['pos_x'],
-                                  y_pos=aperture['pos_y'],
-                                  size=aperture['radius'],
-                                  ignore=False)
+        _, noise, _, _ = false_alarm(image=stack[0, ],
+                                     x_pos=aperture['pos_x'],
+                                     y_pos=aperture['pos_y'],
+                                     size=aperture['radius'],
+                                     ignore=False)
 
         return noise**2
 
     def run(self):
         """
-        Run method of the module. Shifts the reference PSF to the location of the fake planet
-        with an additional correction for the parallactic angle and writes the stack with images
-        with the injected planet signal.
+        Run method of the module. The posterior distributions of the separation, position angle,
+        and flux contrast are sampled with the affine invariant Markov chain Monte Carlo (MCMC)
+        ensemble sampler emcee. At each step, a negative copy of the PSF template is injected
+        and the likelihood function is evaluated at the approximate position of the planet.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         if not isinstance(self.m_param, tuple) or len(self.m_param) != 3:
@@ -809,13 +814,13 @@ class MCMCsamplingModule(ProcessingModule):
         images = self.m_image_in_port.get_all()
         psf = self.m_psf_in_port.get_all()
 
-        if psf.ndim == 3 and psf.shape[0] != images.shape[0]:
+        if psf.shape[0] != 1 and psf.shape[0] != images.shape[0]:
             raise ValueError('The number of frames in psf_in_tag does not match with the number of '
                              'frames in image_in_tag. The DerotateAndStackModule can be used to '
                              'average the PSF frames (without derotating) before applying the '
                              'MCMCsamplingModule.')
 
-        im_shape = image_size_port(self.m_image_in_port)
+        im_shape = self.m_image_in_port.get_shape()[-2:]
 
         if self.m_mask[0] is not None:
             self.m_mask[0] /= pixscale
@@ -869,9 +874,10 @@ class MCMCsamplingModule(ProcessingModule):
         sys.stdout.flush()
 
         self.m_chain_out_port.set_all(sampler.chain)
+
         history = "walkers = "+str(self.m_nwalkers)+", steps = "+str(self.m_nsteps)
-        self.m_chain_out_port.add_history_information("MCMCsamplingModule", history)
-        self.m_chain_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        self.m_chain_out_port.copy_attributes(self.m_image_in_port)
+        self.m_chain_out_port.add_history("MCMCsamplingModule", history)
         self.m_chain_out_port.close_port()
 
         print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))
@@ -894,7 +900,7 @@ class MCMCsamplingModule(ProcessingModule):
 
 class AperturePhotometryModule(ProcessingModule):
     """
-    Module for calculating the counts within a circular region.
+    Pipeline module for calculating the counts within a circular region.
     """
 
     def __init__(self,
@@ -906,20 +912,25 @@ class AperturePhotometryModule(ProcessingModule):
         """
         Constructor of AperturePhotometryModule.
 
-        :param radius: Radius (arcsec) of the circular aperture.
-        :type radius: int
-        :param position: Center position (pix) of the aperture, (x, y). The center of the image
-                         will be used if set to None.
-        :type position: (float, float)
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry that is read as input.
-        :type image_in_tag: str
-        :param phot_out_tag: Tag of the database entry with the photometry values that are written
-                             as output.
-        :type phot_out_tag: str
+        Parameters
+        ----------
+        radius : int
+            Radius (arcsec) of the circular aperture.
+        position : tuple(float, float)
+            Center position (pix) of the aperture, (x, y), with subpixel precision. The center of
+            the image will be used if set to None. Python indexing starts at zero so the bottom
+            left corner of the image has coordinates (-0.5, -0.5).
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry that is read as input.
+        phot_out_tag : str
+            Tag of the database entry with the photometry values that are written as output.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(AperturePhotometryModule, self).__init__(name_in)
@@ -932,15 +943,17 @@ class AperturePhotometryModule(ProcessingModule):
 
     def run(self):
         """
-        Run method of the module. Calculates the counts for each frames and saves the values
-        in the database.
+        Run method of the module. Computes the flux within a circular aperture for each
+        frame and saves the values in the database.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         def _photometry(image, aperture):
-            photo = aperture_photometry(image, aperture, method='exact')
-            return photo['aperture_sum']
+            return aperture_photometry(image, aperture, method='exact')['aperture_sum']
 
         self.m_phot_out_port.del_all_data()
         self.m_phot_out_port.del_all_attributes()
@@ -948,10 +961,8 @@ class AperturePhotometryModule(ProcessingModule):
         pixscale = self.m_image_in_port.get_attribute("PIXSCALE")
         self.m_radius /= pixscale
 
-        size = self.m_image_in_port.get_shape()[1]
-
         if self.m_position is None:
-            self.m_position = (size/2., size/2.)
+            self.m_position = center_subpixel(self.m_image_in_port[0, ])
 
         # Position in CircularAperture is defined as (x, y)
         aperture = CircularAperture(self.m_position, self.m_radius)
@@ -960,9 +971,9 @@ class AperturePhotometryModule(ProcessingModule):
                                       self.m_image_in_port,
                                       self.m_phot_out_port,
                                       "Running AperturePhotometryModule...",
-                                      func_args=(aperture,))
+                                      func_args=(aperture, ))
 
-        self.m_phot_out_port.copy_attributes_from_input_port(self.m_image_in_port)
-        self.m_phot_out_port.add_history_information("AperturePhotometryModule",
-                                                     "radius = "+str(self.m_radius*pixscale))
+        history = "radius [arcsec] = {:.3f}".format(self.m_radius*pixscale)
+        self.m_phot_out_port.copy_attributes(self.m_image_in_port)
+        self.m_phot_out_port.add_history("AperturePhotometryModule", history)
         self.m_phot_out_port.close_port()

@@ -1,9 +1,8 @@
 """
-Modules for the detection and interpolation of bad pixels.
+Pipeline modules for the detection and interpolation of bad pixels.
 """
 
 from __future__ import absolute_import
-from __future__ import print_function
 
 import sys
 import copy
@@ -59,15 +58,19 @@ def _bad_pixel_interpolation(image_in,
     """"
     Internal function to interpolate bad pixels.
 
-    :param image_in: Input image.
-    :type image_in: numpy.ndarray
-    :param bad_pixel_map: Bad pixel map.
-    :type bad_pixel_map: numpy.ndarray
-    :param iterations: Number of iterations.
-    :type iterations: int
+    Parameters
+    ----------
+    image_in : numpy.ndarray
+        Input image.
+    bad_pixel_map : numpy.ndarray
+        Bad pixel map.
+    iterations : int
+        Number of iterations.
 
-    :return: Image in which the bad pixels have been interpolated.
-    :rtype: numpy.ndarray
+    Returns
+    -------
+    numpy.ndarray
+        Image in which the bad pixels have been interpolated.
     """
 
     image_in = image_in * bad_pixel_map
@@ -140,16 +143,21 @@ def _bad_pixel_interpolation(image_in,
 #     """"
 #     Internal function to create a map with ones and zeros.
 #
-#     :param dev_image: Image of pixel deviations from neighborhood means, squared.
-#     :type dev_image: numpy.ndarray
-#     :param var_image: Image of pixel neighborhood variances * (N_sigma)^2.
-#     :type var_image: numpy.ndarray
-#     :param source_image: Input image.
-#     :type source_image: numpy.ndarray
-#     :param out_image: Bad pixel map.
-#     :type out_image: numpy.ndarray
+#     Parameters
+#     ----------
+#     dev_image : numpy.ndarray
+#         Image of pixel deviations from neighborhood means, squared.
+#     var_image : numpy.ndarray
+#         Image of pixel neighborhood variances * (N_sigma)^2.
+#     source_image : numpy.ndarray
+#         Input image.
+#     out_image : numpy.ndarray
+#         Bad pixel map.
 #
-#     :return: None
+#     Returns
+#     -------
+#     NoneType
+#         None
 #     """
 #
 #     for i in range(source_image.shape[0]):
@@ -162,8 +170,8 @@ def _bad_pixel_interpolation(image_in,
 
 class BadPixelSigmaFilterModule(ProcessingModule):
     """
-    Module for finding bad pixels with a sigma filter and replacing them with the mean value of
-    the surrounding pixels.
+    Pipeline module for finding bad pixels with a sigma filter and replacing them with the mean
+    value of the surrounding pixels.
     """
 
     @staticmethod
@@ -196,23 +204,29 @@ class BadPixelSigmaFilterModule(ProcessingModule):
         """
         Constructor of BadPixelSigmaFilterModule.
 
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry that is read as input.
-        :type image_in_tag: str
-        :param image_out_tag: Tag of the database entry that is written as output.
-        :type image_out_tag: str
-        :param map_out_tag: Tag of the database entry with the bad pixel map that is written as
-                            output. No data is written if set to None.
-        :type map_out_tag: str
-        :param box: Size of the sigma filter.
-        :type box: int
-        :param sigma: Sigma threshold.
-        :type sigma: float
-        :param iterate: Number of iterations.
-        :type iterate: int
+        Parameters
+        ----------
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry that is read as input.
+        image_out_tag : str
+            Tag of the database entry that is written as output.
+        map_out_tag : str
+            Tag of the database entry with the bad pixel map that is written as output. No data
+            is written if set to None.
+        box : int
+            Size of the sigma filter. The area of the filter is equal to the squared value of
+            *box*.
+        sigma : float
+            Sigma threshold.
+        iterate : int
+            Number of iterations.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(BadPixelSigmaFilterModule, self).__init__(name_in)
@@ -233,7 +247,10 @@ class BadPixelSigmaFilterModule(ProcessingModule):
         Run method of the module. Finds bad pixels with a sigma filter, replaces bad pixels with
         the mean value of the surrounding pixels, and writes the cleaned images to the database.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         def _bad_pixel_sigma_filter(image_in,
@@ -290,24 +307,20 @@ class BadPixelSigmaFilterModule(ProcessingModule):
                                                  self.m_sigma,
                                                  self.m_iterate))
 
-        self.m_image_out_port.add_history_information("Bad pixel cleaning",
-                                                      "Sigma filter = " + str(self.m_sigma))
-
-        self.m_image_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        history = "sigma = "+str(self.m_sigma)
+        self.m_image_out_port.copy_attributes(self.m_image_in_port)
+        self.m_image_out_port.add_history("BadPixelSigmaFilterModule", history)
 
         if self.m_map_out_port is not None:
-
-            self.m_map_out_port.add_history_information("Bad pixel cleaning",
-                                                        "Sigma filter = " + str(self.m_sigma))
-
-            self.m_map_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+            self.m_map_out_port.copy_attributes(self.m_image_in_port)
+            self.m_map_out_port.add_history("BadPixelSigmaFilterModule", history)
 
         self.m_image_out_port.close_port()
 
 
 class BadPixelMapModule(ProcessingModule):
     """
-    Module to create a bad pixel map from the dark frames and flat fields.
+    Pipeline module to create a bad pixel map from the dark frames and flat fields.
     """
 
     def __init__(self,
@@ -320,25 +333,29 @@ class BadPixelMapModule(ProcessingModule):
         """
         Constructor of BadPixelMapModule.
 
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param dark_in_tag: Tag of the database entry with the dark frames that are read as input.
-                            Not read if set to None.
-        :type dark_in_tag: str
-        :param flat_in_tag: Tag of the database entry with the flat fields that are read as input.
-                            Not read if set to None.
-        :type flat_in_tag: str
-        :param bp_map_out_tag: Tag of the database entry with the bad pixel map that is written as
-                               output.
-        :type bp_map_out_tag: str
-        :param dark_threshold: Fractional threshold with respect to the maximum pixel value in the
-                               dark frame to flag bad pixels.
-        :type dark_threshold: float
-        :param flat_threshold: Fractional threshold with respect to the maximum pixel value in the
-                               flat field to flag bad pixels.
-        :type flat_threshold: float
+        Parameters
+        ----------
+        name_in : str
+            Unique name of the module instance.
+        dark_in_tag : str
+            Tag of the database entry with the dark frames that are read as input. Not read if set
+            to None.
+        flat_in_tag : str
+            Tag of the database entry with the flat fields that are read as input. Not read if set
+            to None.
+        bp_map_out_tag : str
+            Tag of the database entry with the bad pixel map that is written as output.
+        dark_threshold : float
+            Fractional threshold with respect to the maximum pixel value in the dark frame to flag
+            bad pixels.
+        flat_threshold : float
+            Fractional threshold with respect to the maximum pixel value in the flat field to flag
+            bad pixels.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(BadPixelMapModule, self).__init__(name_in)
@@ -366,7 +383,10 @@ class BadPixelMapModule(ProcessingModule):
         threshold will be flagged while for the flat frame pixel values smaller than the threshold
         will be flagged.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         if self.m_dark_port is not None:
@@ -376,7 +396,9 @@ class BadPixelMapModule(ProcessingModule):
                 dark = np.mean(dark, axis=0)
 
             max_dark = np.max(dark)
-            print("Threshold dark frame [counts] =", max_dark*self.m_dark_threshold)
+
+            sys.stdout.write("Threshold dark frame [counts] ="+str(max_dark*self.m_dark_threshold)+'\n')
+            sys.stdout.flush()
 
             bpmap = np.ones(dark.shape)
             bpmap[np.where(dark > max_dark*self.m_dark_threshold)] = 0
@@ -388,7 +410,9 @@ class BadPixelMapModule(ProcessingModule):
                 flat = np.mean(flat, axis=0)
 
             max_flat = np.max(flat)
-            print("Threshold flat field [counts] =", max_flat*self.m_flat_threshold)
+
+            sys.stdout.write("Threshold flat field [counts] ="+str(max_flat*self.m_flat_threshold)+'\n')
+            sys.stdout.flush()
 
             if self.m_dark_port is None:
                 bpmap = np.ones(flat.shape)
@@ -402,16 +426,19 @@ class BadPixelMapModule(ProcessingModule):
         self.m_bp_map_out_port.set_all(bpmap, data_dim=2)
 
         if self.m_dark_port is not None:
-            self.m_bp_map_out_port.copy_attributes_from_input_port(self.m_dark_port)
+            self.m_bp_map_out_port.copy_attributes(self.m_dark_port)
         elif self.m_flat_port is not None:
-            self.m_bp_map_out_port.copy_attributes_from_input_port(self.m_flat_port)
+            self.m_bp_map_out_port.copy_attributes(self.m_flat_port)
+
+        history = "dark = "+str(self.m_dark_threshold)+", flat = "+str(self.m_flat_threshold)
+        self.m_bp_map_out_port.add_history("BadPixelMapModule", history)
 
         self.m_bp_map_out_port.close_port()
 
 
 class BadPixelInterpolationModule(ProcessingModule):
     """
-    Module to interpolate bad pixels with spectral deconvolution.
+    Pipeline module to interpolate bad pixels with spectral deconvolution.
     """
 
     def __init__(self,
@@ -423,19 +450,23 @@ class BadPixelInterpolationModule(ProcessingModule):
         """
         Constructor of BadPixelInterpolationModule.
 
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry with the images that are read as input.
-        :type image_in_tag: str
-        :param bad_pixel_map_tag: Tag of the database entry with the bad pixel map that is read
-                                  as input.
-        :type bad_pixel_map_tag: str
-        :param image_out_tag: Tag of the database entry that is written as output.
-        :type image_out_tag: str
-        :param iterations: Number of iterations of the spectral deconvolution.
-        :type iterations: int
+        Parameters
+        ----------
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry with the images that are read as input.
+        bad_pixel_map_tag : str
+            Tag of the database entry with the bad pixel map that is read as input.
+        image_out_tag : str
+            Tag of the database entry that is written as output.
+        iterations : int
+            Number of iterations of the spectral deconvolution.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(BadPixelInterpolationModule, self).__init__(name_in)
@@ -450,7 +481,10 @@ class BadPixelInterpolationModule(ProcessingModule):
         """
         Run method of the module. Interpolates bad pixels with an iterative spectral deconvolution.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         bad_pixel_map = self.m_bp_map_in_port.get_all()
@@ -474,19 +508,18 @@ class BadPixelInterpolationModule(ProcessingModule):
                                       self.m_image_out_port,
                                       "Running BadPixelInterpolationModule...")
 
-        self.m_image_out_port.add_history_information("Bad pixel interpolation",
-                                                      "Iterations = " + str(self.m_iterations))
-
-        self.m_image_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        history = "iterations = "+str(self.m_iterations)
+        self.m_image_out_port.copy_attributes(self.m_image_in_port)
+        self.m_image_out_port.add_history("BadPixelInterpolationModule", history)
         self.m_image_out_port.close_port()
 
 
 class BadPixelTimeFilterModule(ProcessingModule):
     """
-    Module for finding bad pixels with a sigma filter along a pixel line in time. This module is
-    suitable for removing bad pixels that are only present at a position in a small number of
-    images, for example because a dither pattern has been applied. Pixel lines can be processed
-    in parallel by setting the CPU keyword in the configuration file.
+    Pipeline module for finding bad pixels with a sigma filter along a pixel line in time. This
+    module is suitable for removing bad pixels that are only present at a position in a small
+    number of images, for example because a dither pattern has been applied. Pixel lines can be
+    processed in parallel by setting the CPU keyword in the configuration file.
     """
 
     def __init__(self,
@@ -497,16 +530,21 @@ class BadPixelTimeFilterModule(ProcessingModule):
         """
         Constructor of BadPixelTimeFilterModule.
 
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry that is read as input.
-        :type image_in_tag: str
-        :param image_out_tag: Tag of the database entry that is written as output.
-        :type image_out_tag: str
-        :param sigma: Lower and upper sigma threshold (lower, upper).
-        :type sigma: (float, float)
+        Parameters
+        ----------
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry that is read as input.
+        image_out_tag : str
+            Tag of the database entry that is written as output.
+        sigma : tuple(float, float)
+            Lower and upper sigma threshold as (lower, upper).
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(BadPixelTimeFilterModule, self).__init__(name_in)
@@ -522,7 +560,10 @@ class BadPixelTimeFilterModule(ProcessingModule):
         the mean value of the pixels (excluding the bad pixels), and writes the cleaned images to
         the database.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         self.m_image_out_port.del_all_data()
@@ -558,17 +599,16 @@ class BadPixelTimeFilterModule(ProcessingModule):
         sys.stdout.write(" [DONE]\n")
         sys.stdout.flush()
 
-        self.m_image_out_port.add_history_information("BadPixelTimeFilterModule",
-                                                      "sigma = " + str(self.m_sigma))
-
-        self.m_image_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        history = "sigma = "+str(self.m_sigma)
+        self.m_image_out_port.copy_attributes(self.m_image_in_port)
+        self.m_image_out_port.add_history("BadPixelTimeFilterModule", history)
         self.m_image_out_port.close_port()
 
 
 class ReplaceBadPixelsModule(ProcessingModule):
     """
-    Module for replacing bad pixels with the mean are median value of the surrounding pixels. The
-    bad pixels are selected from the input bad pixel map.
+    Pipeline module for replacing bad pixels with the mean are median value of the surrounding
+    pixels. The bad pixels are selected from the input bad pixel map.
     """
 
     def __init__(self,
@@ -581,23 +621,26 @@ class ReplaceBadPixelsModule(ProcessingModule):
         """
         Constructor of ReplaceBadPixelsModule.
 
-        :param name_in: Unique name of the module instance.
-        :type name_in: str
-        :param image_in_tag: Tag of the database entry that is read as input.
-        :type image_in_tag: str
-        :param image_out_tag: Tag of the database entry that is written as output.
-        :type image_out_tag: str
-        :param sigma: Lower and upper sigma threshold (lower, upper).
-        :type sigma: (float, float)
-        :param size: Number of pixel lines around the bad pixel that is used to calculate the
-                     mean or median replacement value. For example, a 5x5 window is used if
-                     _size_=2.
-        :type size: int
-        :param replace: Replace the bad pixel with the mean ('mean'), median ('media'), or
-                        NaN ('nan').
-        :type replace: str
+        Parameters
+        ----------
+        name_in : str
+            Unique name of the module instance.
+        image_in_tag : str
+            Tag of the database entry that is read as input.
+        image_out_tag : str
+            Tag of the database entry that is written as output.
+        sigma : tuple(float, float)
+            Lower and upper sigma threshold as (lower, upper).
+        size : int
+            Number of pixel lines around the bad pixel that is used to calculate the mean or median
+            replacement value. For example, a 5x5 window is used if _size_=2.
+        replace : str
+            Replace the bad pixel with the mean ('mean'), median ('median'), or NaN ('nan').
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         super(ReplaceBadPixelsModule, self).__init__(name_in)
@@ -615,7 +658,10 @@ class ReplaceBadPixelsModule(ProcessingModule):
         mean or median value (excluding the bad pixels) within a window centered on the bad pixel.
         The original value is used if there are only NaNs within the window.
 
-        :return: None
+        Returns
+        -------
+        NoneType
+            None
         """
 
         self.m_image_out_port.del_all_data()
@@ -653,5 +699,7 @@ class ReplaceBadPixelsModule(ProcessingModule):
                                       "Running ReplaceBadPixelsModule...",
                                       func_args=(index, ))
 
-        self.m_image_out_port.copy_attributes_from_input_port(self.m_image_in_port)
+        history = "replace = "+self.m_replace
+        self.m_image_out_port.copy_attributes(self.m_image_in_port)
+        self.m_image_out_port.add_history("ReplaceBadPixelsModule", history)
         self.m_image_out_port.close_port()

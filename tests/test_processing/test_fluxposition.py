@@ -106,9 +106,9 @@ class TestFluxAndPosition(object):
         self.pipeline.run_module("photometry")
 
         data = self.pipeline.get_data("photometry")
-        assert np.allclose(data[0][0], 0.9702137183213615, rtol=limit, atol=0.)
-        assert np.allclose(data[39][0], 0.9691512171281103, rtol=limit, atol=0.)
-        assert np.allclose(np.mean(data), 0.9691752104364761, rtol=limit, atol=0.)
+        assert np.allclose(data[0][0], 0.9853286992326858, rtol=limit, atol=0.)
+        assert np.allclose(data[39][0], 0.9835251375574492, rtol=limit, atol=0.)
+        assert np.allclose(np.mean(data), 0.9836439188900222, rtol=limit, atol=0.)
         assert data.shape == (40, 1)
 
     def test_angle_interpolation(self):
@@ -176,10 +176,12 @@ class TestFluxAndPosition(object):
         self.pipeline.run_module("false")
 
         data = self.pipeline.get_data("snr_fpf")
-        assert np.allclose(data[0, 2], 0.5280553948214145, rtol=limit, atol=0.)
-        assert np.allclose(data[0, 3], 94.39870535499551, rtol=limit, atol=0.)
-        assert np.allclose(data[0, 4], 8.542166952478182, rtol=limit, atol=0.)
-        assert np.allclose(data[0, 5], 9.54772666372783e-07, rtol=limit, atol=0.)
+        assert np.allclose(data[0, 0], 31.0, rtol=limit, atol=0.)
+        assert np.allclose(data[0, 1], 49.0, rtol=limit, atol=0.)
+        assert np.allclose(data[0, 2], 0.513710034941892, rtol=limit, atol=0.)
+        assert np.allclose(data[0, 3], 93.01278750418334, rtol=limit, atol=0.)
+        assert np.allclose(data[0, 4], 7.633199090133858, rtol=limit, atol=0.)
+        assert np.allclose(data[0, 5], 3.029521252528866e-06, rtol=limit, atol=0.)
 
     def test_simplex_minimization(self):
 
@@ -204,20 +206,20 @@ class TestFluxAndPosition(object):
         self.pipeline.run_module("simplex")
 
         data = self.pipeline.get_data("simplex_res")
-        assert np.allclose(data[0, 50, 31], 0.00020085220731657478, rtol=limit, atol=0.)
-        assert np.allclose(data[65, 50, 31], 2.5035345163849688e-05, rtol=limit, atol=0.)
-        assert np.allclose(np.mean(data), 9.416893585673146e-09, rtol=limit, atol=0.)
-        assert data.shape == (66, 101, 101)
+        assert np.allclose(data[0, 50, 31], 0.00012976212788352575, rtol=limit, atol=0.)
+        assert np.allclose(data[42, 50, 31], 1.2141761821389107e-05, rtol=limit, atol=0.)
+        assert np.allclose(np.mean(data), 9.461337432531517e-09, rtol=limit, atol=0.)
+        assert data.shape == (43, 101, 101)
 
         data = self.pipeline.get_data("flux_position")
-        assert np.allclose(data[65, 0], 32.14539423594633, rtol=limit, atol=0.)
-        assert np.allclose(data[65, 1], 50.40994810153265, rtol=limit, atol=0.)
-        assert np.allclose(data[65, 2], 0.4955803200991986, rtol=limit, atol=0.)
-        assert np.allclose(data[65, 3], 90.28110395762462, rtol=limit, atol=0.)
-        assert np.allclose(data[65, 4], 5.744096115502183, rtol=limit, atol=0.)
-        assert data.shape == (66, 6)
+        assert np.allclose(data[42, 0], 31.6456737445356, rtol=limit, atol=0.)
+        assert np.allclose(data[42, 1], 49.9199601480223, rtol=limit, atol=0.)
+        assert np.allclose(data[42, 2], 0.49557152090327206, rtol=limit, atol=0.)
+        assert np.allclose(data[42, 3], 90.24985480686087, rtol=limit, atol=0.)
+        assert np.allclose(data[42, 4], 5.683191873535635, rtol=limit, atol=0.)
+        assert data.shape == (43, 6)
 
-    def test_mcmc_sampling_poisson(self):
+    def test_mcmc_sampling_gaussian(self):
 
         self.pipeline.set_attribute("adi", "PARANG", np.arange(0., 200., 10.), static=False)
 
@@ -259,7 +261,7 @@ class TestFluxAndPosition(object):
         self.pipeline.run_module("take_psf_avg")
 
         data = self.pipeline.get_data("psf_avg")
-        assert data.shape == (15, 15)
+        assert data.shape == (1, 15, 15)
 
         mcmc = MCMCsamplingModule(param=(0.1485, 0., 0.),
                                   bounds=((0.1, 0.25), (-5., 5.), (-0.5, 0.5)),
@@ -271,13 +273,16 @@ class TestFluxAndPosition(object):
                                   nsteps=150,
                                   psf_scaling=-1.,
                                   pca_number=1,
-                                  aperture=0.1,
+                                  aperture={'type':'circular',
+                                            'pos_x':7.0,
+                                            'pos_y':12.5,
+                                            'radius':0.1},
                                   mask=None,
                                   extra_rot=0.,
                                   scale=2.,
                                   sigma=(1e-3, 1e-1, 1e-2),
                                   prior="flat",
-                                  variance="poisson")
+                                  variance="gaussian")
 
         self.pipeline.add_module(mcmc)
         self.pipeline.run_module("mcmc")
@@ -288,7 +293,7 @@ class TestFluxAndPosition(object):
         assert np.allclose(np.median(single[:, 1]), 0., rtol=0., atol=0.2)
         assert np.allclose(np.median(single[:, 2]), 0., rtol=0., atol=0.1)
 
-    def test_mcmc_sampling_gaussian(self):
+    def test_mcmc_sampling_poisson(self):
 
         database = h5py.File(self.test_dir+'PynPoint_database.hdf5', 'a')
         database['config'].attrs['CPU'] = 4
@@ -303,13 +308,18 @@ class TestFluxAndPosition(object):
                                   nsteps=150,
                                   psf_scaling=-1.,
                                   pca_number=1,
-                                  aperture=0.1,
+                                  aperture={'type':'elliptical',
+                                            'pos_x':7.0,
+                                            'pos_y':12.5,
+                                            'semimajor':0.1,
+                                            'semiminor':0.1,
+                                            'angle':0.0},
                                   mask=None,
                                   extra_rot=0.,
                                   scale=2.,
                                   sigma=(1e-3, 1e-1, 1e-2),
                                   prior="flat",
-                                  variance="gaussian")
+                                  variance="poisson")
 
         self.pipeline.add_module(mcmc)
         self.pipeline.run_module("mcmc_gaussian")
