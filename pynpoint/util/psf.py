@@ -117,7 +117,7 @@ def iterative_pca_psf_subtraction(images,
 
 
 
-    pca_sklearn = PCA(n_components=pca_number, svd_solver="arpack")
+    #pca_sklearn = PCA(n_components=pca_number, svd_solver="arpack")
 
     im_shape = images.shape
     
@@ -132,7 +132,7 @@ def iterative_pca_psf_subtraction(images,
     #im_reshape = im_reshape[:, indices]
 
     # subtract mean image
-    im_reshape -= np.mean(im_reshape, axis=0)
+    #im_reshape -= np.mean(im_reshape, axis=0)
 
     # create first iteration
     S = im_reshape - LRA(im_reshape, pca_number_init)
@@ -144,17 +144,26 @@ def iterative_pca_psf_subtraction(images,
     #residuals = np.zeros((im_shape[0], im_shape[1]*im_shape[2]))
 
     # subtract the psf model
-    residuals = S
+    residuals = np.copy(S)
 
     # reshape to the original image size
     residuals = residuals.reshape(im_shape)
 
+
     # derotate the images
     res_rot = np.zeros(residuals.shape)
     for j, item in enumerate(angles):
-        res_rot[j, ] = rotate(residuals[j, ], item, reshape=False)
-
+        '''fix philipp'''
+        res_rot[j-1, ] = rotate(residuals[j-1, ], item, reshape=False) #j -> j-1 ???
+    
     return residuals, res_rot
+    
+def IPCA(images, angles, pca_number, pca_number_init = 1, indices=None): #takes an unprocessed data cube, a max rank and an angles list and returns IPCA processed frame   
+    Y = cube2mat(images)
+    S = Y - LRA(Y, pca_number_init) #S_0
+    for i in range(pca_number_init, pca_number+1):
+        S = Y - LRA(Y-theta(red(S, angles), images, angles), i)
+    return red(S, angles)
 
 def SVD(A):
     U, sigma, Vh = svd(A)
