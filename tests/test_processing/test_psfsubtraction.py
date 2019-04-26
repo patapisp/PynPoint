@@ -7,7 +7,7 @@ import numpy as np
 from pynpoint.core.pypeline import Pypeline
 from pynpoint.readwrite.fitsreading import FitsReadingModule
 from pynpoint.processing.psfpreparation import AngleInterpolationModule, PSFpreparationModule
-from pynpoint.processing.psfsubtraction import PcaPsfSubtractionModule
+from pynpoint.processing.psfsubtraction import PcaPsfSubtractionModule, ClassicalADIModule
 from pynpoint.util.tests import create_config, create_fake, remove_test_data
 
 warnings.simplefilter("always")
@@ -132,9 +132,53 @@ class TestPSFSubtractionPCA(object):
         assert np.allclose(np.mean(data), 1.227592050148539e-07, rtol=limit, atol=0.)
         assert data.shape == (40, 100, 100)
 
+    def test_classical_adi(self):
+
+        module = ClassicalADIModule(threshold=None,
+                                    nreference=None,
+                                    residuals="mean",
+                                    extra_rot=0.,
+                                    name_in="cadi2",
+                                    image_in_tag="science",
+                                    res_out_tag="cadi_res",
+                                    stack_out_tag="cadi_stack")
+
+        self.pipeline.add_module(module)
+        self.pipeline.run_module("cadi2")
+
+        data = self.pipeline.get_data("cadi_res")
+        assert np.allclose(np.mean(data), -6.359018260066029e-08, rtol=limit, atol=0.)
+        assert data.shape == (80, 100, 100)
+
+        data = self.pipeline.get_data("cadi_stack")
+        assert np.allclose(np.mean(data), -8.318786331552922e-08, rtol=limit, atol=0.)
+        assert data.shape == (1, 100, 100)
+
+    def test_classical_adi_threshold(self):
+
+        module = ClassicalADIModule(threshold=(0.1, 0.03, 1.),
+                                    nreference=5,
+                                    residuals="median",
+                                    extra_rot=0.,
+                                    name_in="cadi1",
+                                    image_in_tag="science",
+                                    res_out_tag="cadi_res",
+                                    stack_out_tag="cadi_stack")
+
+        self.pipeline.add_module(module)
+        self.pipeline.run_module("cadi1")
+
+        data = self.pipeline.get_data("cadi_res")
+        assert np.allclose(np.mean(data), 1.6523183877608216e-07, rtol=limit, atol=0.)
+        assert data.shape == (80, 100, 100)
+
+        data = self.pipeline.get_data("cadi_stack")
+        assert np.allclose(np.mean(data), 1.413437242880268e-07, rtol=limit, atol=0.)
+        assert data.shape == (1, 100, 100)
+
     def test_psf_subtraction_pca_single(self):
 
-        pca = PcaPsfSubtractionModule(pca_numbers=np.arange(1, 21, 1),
+        pca = PcaPsfSubtractionModule(pca_numbers=range(1, 21),
                                       name_in="pca_single",
                                       images_in_tag="science",
                                       reference_in_tag="science",
@@ -176,7 +220,7 @@ class TestPSFSubtractionPCA(object):
 
     def test_psf_subtraction_no_mean(self):
 
-        pca = PcaPsfSubtractionModule(pca_numbers=np.arange(1, 21, 1),
+        pca = PcaPsfSubtractionModule(pca_numbers=range(1, 21),
                                       name_in="pca_no_mean",
                                       images_in_tag="science",
                                       reference_in_tag="science",
@@ -202,7 +246,7 @@ class TestPSFSubtractionPCA(object):
 
     def test_psf_subtraction_ref(self):
 
-        pca = PcaPsfSubtractionModule(pca_numbers=np.arange(1, 21, 1),
+        pca = PcaPsfSubtractionModule(pca_numbers=range(1, 21),
                                       name_in="pca_ref",
                                       images_in_tag="science",
                                       reference_in_tag="reference",
@@ -228,7 +272,7 @@ class TestPSFSubtractionPCA(object):
 
     def test_psf_subtraction_ref_no_mean(self):
 
-        pca = PcaPsfSubtractionModule(pca_numbers=np.arange(1, 21, 1),
+        pca = PcaPsfSubtractionModule(pca_numbers=range(1, 21),
                                       name_in="pca_ref_no_mean",
                                       images_in_tag="science",
                                       reference_in_tag="reference",
@@ -254,7 +298,7 @@ class TestPSFSubtractionPCA(object):
 
     def test_psf_subtraction_pca_single_mask(self):
 
-        pca = PcaPsfSubtractionModule(pca_numbers=np.arange(1, 21, 1),
+        pca = PcaPsfSubtractionModule(pca_numbers=range(1, 21),
                                       name_in="pca_single_mask",
                                       images_in_tag="science_prep",
                                       reference_in_tag="science_prep",
@@ -296,7 +340,7 @@ class TestPSFSubtractionPCA(object):
 
     def test_psf_subtraction_no_mean_mask(self):
 
-        pca = PcaPsfSubtractionModule(pca_numbers=np.arange(1, 21, 1),
+        pca = PcaPsfSubtractionModule(pca_numbers=range(1, 21),
                                       name_in="pca_no_mean_mask",
                                       images_in_tag="science_prep",
                                       reference_in_tag="science_prep",
@@ -322,7 +366,7 @@ class TestPSFSubtractionPCA(object):
 
     def test_psf_subtraction_ref_mask(self):
 
-        pca = PcaPsfSubtractionModule(pca_numbers=np.arange(1, 21, 1),
+        pca = PcaPsfSubtractionModule(pca_numbers=range(1, 21),
                                       name_in="pca_ref_mask",
                                       images_in_tag="science_prep",
                                       reference_in_tag="reference_prep",
@@ -348,7 +392,7 @@ class TestPSFSubtractionPCA(object):
 
     def test_psf_subtraction_ref_no_mean_mask(self):
 
-        pca = PcaPsfSubtractionModule(pca_numbers=np.arange(1, 21, 1),
+        pca = PcaPsfSubtractionModule(pca_numbers=range(1, 21),
                                       name_in="pca_ref_no_mean_mask",
                                       images_in_tag="science_prep",
                                       reference_in_tag="reference_prep",
@@ -377,7 +421,7 @@ class TestPSFSubtractionPCA(object):
         database = h5py.File(self.test_dir+'PynPoint_database.hdf5', 'a')
         database['config'].attrs['CPU'] = 4
 
-        pca = PcaPsfSubtractionModule(pca_numbers=np.arange(1, 21, 1),
+        pca = PcaPsfSubtractionModule(pca_numbers=range(1, 21),
                                       name_in="pca_multi",
                                       images_in_tag="science",
                                       reference_in_tag="science",
@@ -418,7 +462,7 @@ class TestPSFSubtractionPCA(object):
         database = h5py.File(self.test_dir+'PynPoint_database.hdf5', 'a')
         database['config'].attrs['CPU'] = 4
 
-        pca = PcaPsfSubtractionModule(pca_numbers=np.arange(1, 21, 1),
+        pca = PcaPsfSubtractionModule(pca_numbers=range(1, 21),
                                       name_in="pca_multi_mask",
                                       images_in_tag="science_prep",
                                       reference_in_tag="science_prep",

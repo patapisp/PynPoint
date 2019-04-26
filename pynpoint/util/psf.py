@@ -20,25 +20,28 @@ def pca_psf_subtraction(images,
     """
     Function for PSF subtraction with PCA.
 
-    :param images: Stack of images. Also used as reference images if pca_sklearn is set to None.
-                   Should be in the original 3D shape if pca_sklearn is set to None or in the 2D
-                   reshaped format if pca_sklearn is not None.
-    :type images: numpy.ndarray
-    :param parang: Derotation angles (deg).
-    :type parang: numpy.ndarray
-    :param pca_number: Number of principal components used for the PSF model.
-    :type pca_number: int
-    :param pca_sklearn: PCA object with the basis if not set to None.
-    :type pca_sklearn: sklearn.decomposition.pca.PCA
-    :param im_shape: Original shape of the stack with images. Required if pca_sklearn is not
-                     set to None.
-    :type im_shape: tuple(int, int, int)
-    :param indices: Non-masked image indices, required if pca_sklearn is not set to None. Optional
-                    if pca_sklearn is set to None.
-    :type indices: numpy.ndarray
+    images : numpy.ndarray
+        Stack of images. Also used as reference images if `pca_sklearn` is set to None. Should be
+        in the original 3D shape if `pca_sklearn` is set to None or in the 2D reshaped format if
+        `pca_sklearn` is not set to None.
+    parang : numpy.ndarray
+        Derotation angles (deg).
+    pca_number : int
+        Number of principal components used for the PSF model.
+    pca_sklearn : sklearn.decomposition.pca.PCA
+        PCA object with the basis if not set to None.
+    im_shape : tuple(int, int, int)
+        Original shape of the stack with images. Required if `pca_sklearn` is not set to None.
+    indices : numpy.ndarray
+        Non-masked image indices, required if `pca_sklearn` is not set to None. Optional if
+        `pca_sklearn` is set to None.
 
-    :return: Mean residuals of the PSF subtraction and the derotated but non-stacked residuals.
-    :rtype: numpy.ndarray, numpy.ndarray
+    Returns
+    -------
+    numpy.ndarray
+        Residuals of the PSF subtraction.
+    numpy.ndarray
+        Derotated residuals of the PSF subtraction.
     """
 
     if pca_sklearn is None:
@@ -117,7 +120,7 @@ def iterative_pca_psf_subtraction(images,
 
 
 
-    pca_sklearn = PCA(n_components=pca_number, svd_solver="arpack")
+    #pca_sklearn = PCA(n_components=pca_number, svd_solver="arpack")
 
     im_shape = images.shape
     
@@ -132,7 +135,7 @@ def iterative_pca_psf_subtraction(images,
     #im_reshape = im_reshape[:, indices]
 
     # subtract mean image
-    im_reshape -= np.mean(im_reshape, axis=0)
+    #im_reshape -= np.mean(im_reshape, axis=0)
 
     # create first iteration
     S = im_reshape - LRA(im_reshape, pca_number_init)
@@ -144,17 +147,25 @@ def iterative_pca_psf_subtraction(images,
     #residuals = np.zeros((im_shape[0], im_shape[1]*im_shape[2]))
 
     # subtract the psf model
-    residuals = S
+    residuals = np.copy(S)
 
     # reshape to the original image size
     residuals = residuals.reshape(im_shape)
 
+
     # derotate the images
     res_rot = np.zeros(residuals.shape)
     for j, item in enumerate(angles):
-        res_rot[j, ] = rotate(residuals[j, ], item, reshape=False)
-
+        res_rot[j-1, ] = rotate(residuals[j-1, ], item, reshape=False) #changed j to j-1, is this correct?
+    
     return residuals, res_rot
+    
+def IPCA(images, angles, pca_number, pca_number_init = 1, indices=None): #takes an unprocessed data cube, a max rank and an angles list and returns IPCA processed frame   
+    Y = cube2mat(images)
+    S = Y - LRA(Y, pca_number_init) #S_0
+    for i in range(pca_number_init, pca_number+1):
+        S = Y - LRA(Y-theta(red(S, angles), images, angles), i)
+    return red(S, angles)
 
 def SVD(A):
     U, sigma, Vh = svd(A)
