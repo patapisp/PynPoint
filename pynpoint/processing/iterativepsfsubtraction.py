@@ -15,7 +15,7 @@ from sklearn.decomposition import PCA
 from pynpoint.core.processing import ProcessingModule
 from pynpoint.util.module import progress
 from pynpoint.util.multipca import PcaMultiprocessingCapsule
-from pynpoint.util.psf import pca_psf_subtraction, iterative_pca_psf_subtraction, IPCA
+from pynpoint.util.psf import pca_psf_subtraction, pca_psf_subtraction, IPCA
 from pynpoint.util.residuals import combine_residuals
 
 class IterativePcaPsfSubtractionModule(ProcessingModule):
@@ -91,7 +91,6 @@ class IterativePcaPsfSubtractionModule(ProcessingModule):
         self.m_reference_in_port = self.add_input_port(reference_in_tag)
         self.m_star_in_port = self.add_input_port(images_in_tag)
         
-        '''fix philipp'''
         self.m_pca_number_init = pca_number_init
 
         if res_mean_tag is None:
@@ -137,13 +136,12 @@ class IterativePcaPsfSubtractionModule(ProcessingModule):
 
             parang = -1.*self.m_star_in_port.get_attribute("PARANG") + self.m_extra_rot
             
-            '''fix philipp'''
             pca_number_init = self.m_pca_number_init
 
             residuals, res_rot = iterative_pca_psf_subtraction(images=star_reshape,
                                                      angles=parang,
                                                      pca_number=pca_number,
-                                                     pca_number_init=pca_number_init, #fix philipp
+                                                     pca_number_init=pca_number_init,
                                                      indices=indices)
 
             history = "max iter PC number = "+str(np.amax(self.m_components))

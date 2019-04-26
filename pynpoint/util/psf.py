@@ -153,8 +153,7 @@ def iterative_pca_psf_subtraction(images,
     # derotate the images
     res_rot = np.zeros(residuals.shape)
     for j, item in enumerate(angles):
-        '''fix philipp'''
-        res_rot[j-1, ] = rotate(residuals[j-1, ], item, reshape=False) #j -> j-1 ???
+        res_rot[j-1, ] = rotate(residuals[j-1, ], item, reshape=False) #changed j to j-1, is this correct?
     
     return residuals, res_rot
     
