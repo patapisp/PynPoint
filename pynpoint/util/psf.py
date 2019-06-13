@@ -2,8 +2,6 @@
 Functions for PSF subtraction.
 """
 
-from __future__ import absolute_import
-
 import numpy as np
 import sys
 from scipy.ndimage import rotate
@@ -20,6 +18,8 @@ def pca_psf_subtraction(images,
     """
     Function for PSF subtraction with PCA.
 
+    Parameters
+    ----------
     images : numpy.ndarray
         Stack of images. Also used as reference images if `pca_sklearn` is set to None. Should be
         in the original 3D shape if `pca_sklearn` is set to None or in the 2D reshaped format if
@@ -28,13 +28,12 @@ def pca_psf_subtraction(images,
         Derotation angles (deg).
     pca_number : int
         Number of principal components used for the PSF model.
-    pca_sklearn : sklearn.decomposition.pca.PCA
+    pca_sklearn : sklearn.decomposition.pca.PCA, None
         PCA object with the basis if not set to None.
-    im_shape : tuple(int, int, int)
+    im_shape : tuple(int, int, int), None
         Original shape of the stack with images. Required if `pca_sklearn` is not set to None.
-    indices : numpy.ndarray
-        Non-masked image indices, required if `pca_sklearn` is not set to None. Optional if
-        `pca_sklearn` is set to None.
+    indices : numpy.ndarray, None
+        Non-masked image indices. All pixels are used if set to None.
 
     Returns
     -------
@@ -79,6 +78,9 @@ def pca_psf_subtraction(images,
     residuals = np.zeros((im_shape[0], im_shape[1]*im_shape[2]))
 
     # subtract the psf model
+    if indices is None:
+        indices = np.arange(0, im_reshape.shape[1], 1)
+
     residuals[:, indices] = im_reshape - psf_model
 
     # reshape to the original image size
